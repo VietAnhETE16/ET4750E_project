@@ -1,48 +1,194 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Interactive Karaoke</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
-        canvas { display: block; }
-        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; }
-        button { background: #ff0055; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Hệ thống Karaoke 3D trực tuyến</title>
+
+  <link rel="stylesheet" href="./css/style.css" />
 </head>
+
 <body>
-    <div id="ui">
-        <h2>🎤 3D Karaoke System</h2>
-        <button id="startButton">Start Audio Engine</button>
-        <p>Active Singer: <span id="singerDisplay">None</span></p>
-        <p>Pitch: <span id="pitchDisplay">0</span> Hz</p>
+  <div id="app">
+    <!-- Background YouTube LED Layer -->
+    <section id="youtube-led-layer" class="youtube-led-layer">
+      <div id="youtube-player" class="youtube-player-placeholder">
+        <div class="placeholder-content">
+          <h1>Karaoke 3D Online</h1>
+          <p>Chọn bài hát để bắt đầu sân khấu ảo</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Foreground Three.js Layer -->
+    <section id="three-layer" class="three-layer">
+      <canvas id="three-canvas"></canvas>
+    </section>
+
+    <!-- UI Overlay Layer -->
+    <section id="ui-layer" class="ui-layer">
+      <aside id="control-panel" class="control-panel">
+        <header class="panel-header">
+          <div>
+            <h2>Karaoke 3D</h2>
+            <p>Online Stage System</p>
+          </div>
+
+          <button id="btn-collapse" class="icon-button" title="Thu gọn bảng điều khiển">
+            ⟨
+          </button>
+        </header>
+
+        <div class="panel-body">
+          <!-- Search -->
+          <div class="panel-section">
+            <label for="search-input" class="section-label">Tìm bài hát YouTube</label>
+
+            <div class="search-row">
+              <input
+                id="search-input"
+                type="text"
+                placeholder="Nhập tên bài hát karaoke..."
+                autocomplete="off"
+              />
+
+              <button id="btn-search" class="primary-button">
+                Tìm
+              </button>
+            </div>
+
+            <ul id="suggestion-list" class="suggestion-list"></ul>
+            <div id="search-results" class="search-results"></div>
+          </div>
+
+          <!-- Playback -->
+          <div class="panel-section">
+            <label class="section-label">Điều khiển phát nhạc</label>
+
+            <div class="button-grid">
+              <button id="btn-play-pause" class="secondary-button">
+                Play / Pause
+              </button>
+
+              <button id="btn-stop" class="secondary-button">
+                Stop
+              </button>
+            </div>
+          </div>
+
+          <!-- Microphone -->
+          <div class="panel-section">
+            <label class="section-label">Microphone / Soundcard K300</label>
+
+            <div class="mic-card">
+              <div>
+                <strong id="mic-status">Mic chưa bật</strong>
+                <p id="mic-detail">Nhấn nút bên dưới để cấp quyền micro.</p>
+              </div>
+
+              <button id="btn-toggle-mic" class="primary-button">
+                Bật Mic
+              </button>
+            </div>
+          </div>
+
+          <!-- Singer Status -->
+          <div class="panel-section">
+            <label class="section-label">Trạng thái ca sĩ</label>
+
+            <div class="singer-status-grid">
+              <div id="singer-1-card" class="singer-card">
+                <div class="singer-avatar-dot singer-1"></div>
+                <div>
+                  <strong>Ca sĩ 1</strong>
+                  <p id="singer-1-status">Đang chờ giọng hát...</p>
+                </div>
+              </div>
+
+              <div id="singer-2-card" class="singer-card">
+                <div class="singer-avatar-dot singer-2"></div>
+                <div>
+                  <strong>Ca sĩ 2</strong>
+                  <p id="singer-2-status">Đang chờ giọng hát...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Score -->
+          <div class="panel-section">
+            <label class="section-label">Chấm điểm</label>
+
+            <div class="score-hidden-box">
+              <strong>Điểm đang được tính ẩn</strong>
+              <p>Điểm số chỉ hiện sau khi bài hát kết thúc.</p>
+            </div>
+          </div>
+
+          <!-- Shortcuts -->
+          <div class="panel-section shortcut-section">
+            <label class="section-label">Phím tắt</label>
+
+            <div class="shortcut-list">
+              <span><kbd>Space</kbd> Play / Pause</span>
+              <span><kbd>Enter</kbd> Tìm bài</span>
+              <span><kbd>M</kbd> Bật / tắt Mic</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Collapsed Floating Button -->
+      <button id="btn-expand-panel" class="expand-panel-button hidden">
+        ☰
+      </button>
+    </section>
+
+    <!-- Final Score Modal -->
+    <div id="score-modal" class="modal-overlay hidden">
+      <div class="score-modal">
+        <h2>Kết quả bài hát</h2>
+
+        <div class="final-score">
+          <span id="final-score-value">0</span>
+          <small>/ 100</small>
+        </div>
+
+        <p id="score-comment">Bạn đã hoàn thành bài hát.</p>
+
+        <div class="score-detail-grid">
+          <div>
+            <strong id="pitch-score">0</strong>
+            <span>Cao độ</span>
+          </div>
+
+          <div>
+            <strong id="rhythm-score">0</strong>
+            <span>Nhịp</span>
+          </div>
+
+          <div>
+            <strong id="energy-score">0</strong>
+            <span>Năng lượng</span>
+          </div>
+
+          <div>
+            <strong id="stability-score">0</strong>
+            <span>Ổn định</span>
+          </div>
+        </div>
+
+        <button id="btn-close-score" class="primary-button">
+          Đóng
+        </button>
+      </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/meyda/dist/web/meyda.min.js"></script>
-    <script src="https://unpkg.com/pitchfinder/lib/pitchfinder.min.js"></script>
-    
-    <script src="KaraokeScene.js"></script>
-    <script src="AudioEngine.js"></script>
-    <script>
-        // Main initialization
-        const scene = new KaraokeScene();
-        let engine;
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
 
-        document.getElementById('startButton').addEventListener('click', async () => {
-            document.getElementById('startButton').style.display = 'none';
-            engine = new AudioEngine(scene);
-            await engine.initialize();
-        });
-
-        // Animation Loop
-        function animate() {
-            requestAnimationFrame(animate);
-            scene.render();
-            if (engine) engine.update();
-        }
-        animate();
-    </script>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
