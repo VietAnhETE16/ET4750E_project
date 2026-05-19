@@ -2,7 +2,6 @@ const CONFIG = {
   appName: "Hệ thống Karaoke 3D trực tuyến",
 
   youtube: {
-    apiKey: "your_api_key_here",
     maxResults: 8,
     regionCode: "VN",
     relevanceLanguage: "vi",
@@ -19,10 +18,8 @@ const CONFIG = {
   audio: {
     fftSize: 2048,
     smoothingTimeConstant: 0.82,
-
     minRmsForVoice: 0.025,
     silenceTimeoutMs: 900,
-
     analysisIntervalMs: 33
   },
 
@@ -30,7 +27,6 @@ const CONFIG = {
     cameraFov: 50,
     cameraNear: 0.1,
     cameraFar: 1000,
-
     maxPixelRatio: 1.5,
 
     modelPaths: {
