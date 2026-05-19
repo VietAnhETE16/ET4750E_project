@@ -42,11 +42,6 @@ class KeyboardShortcut {
 
   handleGlobalShortcut(event) {
     switch (event.key) {
-      case " ":
-        event.preventDefault();
-        eventBus.emit("ui:toggle-play");
-        break;
-
       case "Enter":
         event.preventDefault();
         eventBus.emit("ui:submit-search");

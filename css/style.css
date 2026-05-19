@@ -69,34 +69,120 @@ button {
   inset: 0;
   z-index: 1;
 
-  transform-style: preserve-3d;
-  perspective: 1000px;
-
   background:
     radial-gradient(circle at 50% 20%, rgba(56, 189, 248, 0.22), transparent 35%),
     radial-gradient(circle at 20% 80%, rgba(168, 85, 247, 0.2), transparent 32%),
     linear-gradient(135deg, #020617, #0f172a 55%, #020617);
+
+  overflow: hidden;
 }
 
-.youtube-player-placeholder {
+/* Không dùng translateZ trực tiếp lên iframe nữa */
+.youtube-screen-frame {
   position: absolute;
   inset: 5% 8%;
   border-radius: 32px;
   overflow: hidden;
 
-  transform: translateZ(-250px) scale(1.18);
-  transform-origin: center center;
-
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
-  background-size: 26px 26px, 26px 26px, 100% 100%;
+  background: #000;
+  border: 2px solid rgba(255, 255, 255, 0.16);
 
   box-shadow:
-    0 0 60px rgba(56, 189, 248, 0.2),
-    inset 0 0 80px rgba(0, 0, 0, 0.5);
+    0 0 70px rgba(56, 189, 248, 0.25),
+    0 0 130px rgba(168, 85, 247, 0.18),
+    inset 0 0 80px rgba(0, 0, 0, 0.55);
+
+  transform: scale(0.96);
+  transform-origin: center center;
+}
+
+/* Tạo cảm giác màn LED bằng overlay, không che video */
+.youtube-screen-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 22px 22px;
+
+  mix-blend-mode: screen;
+  opacity: 0.35;
+}
+
+#youtube-player {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+
+  width: 100%;
+  height: 100%;
+
+  background: #000;
+  opacity: 1;
+  visibility: visible;
+}
+
+#youtube-player iframe {
+  position: absolute;
+  inset: 0;
+
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+
+  border: none;
+  background: #000;
+
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Placeholder chỉ hiện khi chưa phát video */
+.placeholder-content {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+
+  height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 24px;
+
+  background:
+    radial-gradient(circle at center, rgba(56, 189, 248, 0.12), transparent 42%),
+    rgba(2, 6, 23, 0.88);
+
+  pointer-events: none;
+}
+
+.placeholder-content.hidden {
+  display: none !important;
+}
+
+.placeholder-content h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 6vw, 6rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e0f2fe;
+  text-shadow:
+    0 0 10px rgba(56, 189, 248, 0.8),
+    0 0 30px rgba(56, 189, 248, 0.45);
+}
+
+.placeholder-content p {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: clamp(1rem, 2vw, 1.4rem);
+}
+
+.placeholder-content.hidden {
+  display: none;
 }
 
 .placeholder-content {
@@ -335,6 +421,7 @@ button {
 }
 
 .search-result-item {
+  width: 100%;
   display: grid;
   grid-template-columns: 86px 1fr;
   gap: 10px;
@@ -343,6 +430,9 @@ button {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-glass);
   background: rgba(15, 23, 42, 0.72);
+  color: var(--text-main);
+
+  text-align: left;
   cursor: pointer;
 }
 
@@ -626,8 +716,10 @@ kbd {
     left: 16px;
   }
 
-  .youtube-player-placeholder {
-    inset: 8% 4%;
+  @media (max-width: 720px) {
+    .youtube-screen-frame {
+      inset: 8% 4%;
+    }
   }
 
   .button-grid,
@@ -639,4 +731,148 @@ kbd {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.single-button {
+  grid-template-columns: 1fr;
+}
+
+.youtube-screen-frame {
+  background: #000;
+}
+
+#youtube-player {
+  background: #000;
+  opacity: 1;
+  visibility: visible;
+}
+
+#youtube-player iframe {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 1;
+  visibility: visible;
+}
+
+.queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.small-button {
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  padding: 6px 10px;
+
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-main);
+
+  font-size: 0.75rem;
+  cursor: pointer;
+
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    opacity 160ms ease;
+}
+
+.small-button:hover {
+  transform: translateY(-1px);
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.queue-summary {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.queue-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.queue-empty {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  background: rgba(15, 23, 42, 0.55);
+
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.queue-item {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 8px;
+  align-items: center;
+
+  padding: 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.queue-index {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.14);
+  color: #e0f2fe;
+
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.queue-info {
+  min-width: 0;
+}
+
+.queue-info strong {
+  display: block;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 0.82rem;
+}
+
+.queue-info span {
+  display: block;
+  margin-top: 3px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.queue-remove-button {
+  width: 28px;
+  height: 28px;
+
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+
+  background: rgba(251, 113, 133, 0.12);
+  color: #fecdd3;
+
+  cursor: pointer;
+}
+
+.queue-remove-button:hover {
+  background: rgba(251, 113, 133, 0.28);
 }

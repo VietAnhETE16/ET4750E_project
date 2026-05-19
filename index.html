@@ -6,6 +6,7 @@
 
   <title>Hệ thống Karaoke 3D trực tuyến</title>
 
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./css/style.css" />
 </head>
 
@@ -13,8 +14,10 @@
   <div id="app">
     <!-- Background YouTube LED Layer -->
     <section id="youtube-led-layer" class="youtube-led-layer">
-      <div id="youtube-player" class="youtube-player-placeholder">
-        <div class="placeholder-content">
+      <div class="youtube-screen-frame">
+        <div id="youtube-player"></div>
+
+        <div id="youtube-placeholder" class="placeholder-content">
           <h1>Karaoke 3D Online</h1>
           <p>Chọn bài hát để bắt đầu sân khấu ảo</p>
         </div>
@@ -60,6 +63,26 @@
 
             <ul id="suggestion-list" class="suggestion-list"></ul>
             <div id="search-results" class="search-results"></div>
+            <!-- Queue -->
+            <div class="panel-section">
+              <div class="queue-header">
+                <label class="section-label">Hàng chờ phát nhạc</label>
+
+                <button id="btn-clear-queue" class="small-button" type="button">
+                  Xóa hết
+                </button>
+              </div>
+
+              <div class="queue-summary">
+                <span id="queue-count">0 bài trong hàng chờ</span>
+              </div>
+
+              <div id="queue-list" class="queue-list">
+                <div class="queue-empty">
+                  Chưa có bài nào trong hàng chờ.
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Playback -->
@@ -68,13 +91,8 @@
 
             <div class="button-grid">
               <button id="btn-play-pause" class="secondary-button">
-                Play / Pause
+                Dừng bài hát
               </button>
-
-              <button id="btn-stop" class="secondary-button">
-                Stop
-              </button>
-            </div>
           </div>
 
           <!-- Microphone -->
@@ -131,9 +149,9 @@
             <label class="section-label">Phím tắt</label>
 
             <div class="shortcut-list">
-              <span><kbd>Space</kbd> Play / Pause</span>
               <span><kbd>Enter</kbd> Tìm bài</span>
               <span><kbd>M</kbd> Bật / tắt Mic</span>
+              <span><kbd>Esc</kbd> Thu gọn bảng</span>
             </div>
           </div>
         </div>

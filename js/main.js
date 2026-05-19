@@ -5,18 +5,33 @@ import ControlPanel from "./ui/ControlPanel.js";
 import KeyboardShortcut from "./ui/KeyboardShortcut.js";
 import sfxManager from "./ui/SfxManager.js";
 
+import SuggestService from "./youtube/SuggestService.js";
+import YouTubeSearch from "./youtube/YouTubeSearch.js";
+import YouTubePlayer from "./youtube/YouTubePlayer.js";
+import VideoQueue from "./youtube/VideoQueue.js";
+
 class KaraokeApp {
   constructor() {
     this.controlPanel = new ControlPanel();
     this.keyboardShortcut = new KeyboardShortcut();
 
+    this.suggestService = new SuggestService();
+    this.youtubeSearch = new YouTubeSearch();
+    this.youtubePlayer = new YouTubePlayer();
+    this.videoQueue = new VideoQueue();
+
     this.state = {
       micEnabled: false,
-      isPlaying: false
+      isSearching: false,
+      currentVideoId: null,
+      currentVideoTitle: "",
+      playerState: "idle",
+      lastSuggestionTimer: null,
+      autoNextTimer: null
     };
   }
 
-  init() {
+  async init() {
     this.printBanner();
 
     sfxManager.init();
@@ -24,7 +39,8 @@ class KaraokeApp {
     this.controlPanel.init();
     this.keyboardShortcut.init();
 
-    this.bindTemporaryEvents();
+    this.bindEvents();
+    this.emitQueueChanged();
 
     eventBus.emit("mic:status", {
       enabled: false,
@@ -32,130 +48,274 @@ class KaraokeApp {
       detail: "Phần xử lý micro sẽ được thêm ở Phần 4."
     });
 
+    try {
+      await this.youtubePlayer.init();
+    } catch (error) {
+      console.error("[KaraokeApp] Không khởi tạo được YouTube Player:", error);
+
+      eventBus.emit("app:toast", {
+        message: "Không tải được YouTube Player API.",
+        type: "error"
+      });
+    }
+
     eventBus.emit("app:toast", {
-      message: "Phần 1 đã sẵn sàng: UI + Control Panel.",
+      message: "Hệ thống đã sẵn sàng: tìm bài, phát video và dùng hàng chờ.",
       type: "success"
     });
   }
 
-  bindTemporaryEvents() {
-    eventBus.on("ui:search-submit", ({ keyword }) => {
-      console.log("[Search Submit]", keyword);
-
-      eventBus.emit("app:toast", {
-        message: `Tìm kiếm "${keyword}" sẽ được xử lý ở Phần 2.`,
-        type: "info"
-      });
-
-      eventBus.emit("youtube:search-results", {
-        items: this.getDemoSearchResults(keyword)
-      });
-    });
-
+  bindEvents() {
     eventBus.on("ui:search-input", ({ keyword }) => {
-      if (!keyword) {
-        eventBus.emit("youtube:suggestions", {
-          suggestions: []
-        });
-
-        return;
-      }
-
-      eventBus.emit("youtube:suggestions", {
-        suggestions: [
-          `${keyword} karaoke`,
-          `${keyword} beat chuẩn`,
-          `${keyword} karaoke tone nữ`,
-          `${keyword} karaoke tone nam`
-        ]
-      });
+      this.handleSuggestInput(keyword);
     });
 
-    eventBus.on("youtube:select-video", ({ title }) => {
-      eventBus.emit("app:toast", {
-        message: `Đã chọn: ${title}. Player thật sẽ được thêm ở Phần 2.`,
-        type: "success"
-      });
+    eventBus.on("ui:search-submit", ({ keyword }) => {
+      this.handleSearchSubmit(keyword);
     });
 
-    eventBus.on("ui:toggle-play", () => {
-      this.state.isPlaying = !this.state.isPlaying;
-
-      eventBus.emit("app:toast", {
-        message: this.state.isPlaying ? "Play demo." : "Pause demo.",
-        type: "info"
-      });
+    eventBus.on("youtube:select-video", (payload) => {
+      this.handleSelectVideo(payload);
     });
 
     eventBus.on("ui:stop", () => {
-      this.state.isPlaying = false;
-
-      eventBus.emit("app:toast", {
-        message: "Stop demo.",
-        type: "info"
-      });
-
-      this.showDemoScore();
+      this.handleStopVideo();
     });
 
     eventBus.on("ui:toggle-mic", () => {
-      this.state.micEnabled = !this.state.micEnabled;
+      this.handleTemporaryMicToggle();
+    });
 
-      eventBus.emit("mic:status", {
-        enabled: this.state.micEnabled,
-        message: this.state.micEnabled ? "Mic demo đang bật" : "Mic đã tắt",
-        detail: this.state.micEnabled
-          ? "AudioEngine thật sẽ được thêm ở Phần 4."
-          : "Nhấn Bật Mic để cấp quyền micro."
-      });
+    eventBus.on("youtube:state", (payload) => {
+      this.handleYouTubeState(payload);
+    });
 
-      eventBus.emit("singer:active", {
-        singerId: this.state.micEnabled ? "singer1" : "singer2",
-        active: this.state.micEnabled,
-        rms: this.state.micEnabled ? 0.08 : 0,
-        pitch: this.state.micEnabled ? 220 : 0
-      });
+    eventBus.on("youtube:ended", (payload) => {
+      this.handleVideoEnded(payload);
+    });
 
-      if (!this.state.micEnabled) {
-        eventBus.emit("singer:active", {
-          singerId: "singer1",
-          active: false
-        });
+    eventBus.on("youtube:error", (payload) => {
+      this.handleYouTubeError(payload);
+    });
 
-        eventBus.emit("singer:active", {
-          singerId: "singer2",
-          active: false
-        });
-      }
+    eventBus.on("queue:clear", () => {
+      this.handleClearQueue();
+    });
+
+    eventBus.on("queue:remove", ({ index }) => {
+      this.handleRemoveQueueItem(index);
     });
   }
 
-  getDemoSearchResults(keyword) {
-    const encodedKeyword = encodeURIComponent(keyword);
+  handleSuggestInput(keyword) {
+    window.clearTimeout(this.state.lastSuggestionTimer);
 
-    return [
-      {
-        videoId: "demo-1",
-        title: `${keyword} - Karaoke Demo 1`,
-        channelTitle: "Karaoke 3D Demo",
-        thumbnail: `https://placehold.co/320x180/0f172a/38bdf8?text=${encodedKeyword}+1`
-      },
-      {
-        videoId: "demo-2",
-        title: `${keyword} - Beat Chuẩn Demo 2`,
-        channelTitle: "Online Karaoke",
-        thumbnail: `https://placehold.co/320x180/111827/c084fc?text=${encodedKeyword}+2`
-      },
-      {
-        videoId: "demo-3",
-        title: `${keyword} - Tone Nam/Nữ Demo 3`,
-        channelTitle: "Music Stage",
-        thumbnail: `https://placehold.co/320x180/020617/4ade80?text=${encodedKeyword}+3`
+    const query = String(keyword || "").trim();
+
+    if (!query) {
+      eventBus.emit("youtube:suggestions", {
+        suggestions: []
+      });
+
+      return;
+    }
+
+    this.state.lastSuggestionTimer = window.setTimeout(async () => {
+      try {
+        const suggestions = await this.suggestService.getSuggestions(query);
+
+        eventBus.emit("youtube:suggestions", {
+          suggestions
+        });
+      } catch (error) {
+        if (error.name === "AbortError") {
+          return;
+        }
+
+        console.warn("[KaraokeApp] Lỗi gợi ý tìm kiếm:", error);
+
+        eventBus.emit("youtube:suggestions", {
+          suggestions: []
+        });
       }
-    ];
+    }, CONFIG.ui.suggestionDebounceMs);
   }
 
-  showDemoScore() {
+  async handleSearchSubmit(keyword) {
+    const query = String(keyword || "").trim();
+
+    if (!query) {
+      eventBus.emit("app:toast", {
+        message: "Bạn cần nhập tên bài hát trước khi tìm.",
+        type: "warning"
+      });
+
+      return;
+    }
+
+    if (this.state.isSearching) {
+      return;
+    }
+
+    this.state.isSearching = true;
+
+    eventBus.emit("app:toast", {
+      message: `Đang tìm "${query}" trên YouTube...`,
+      type: "info"
+    });
+
+    try {
+      const items = await this.youtubeSearch.searchVideos(query);
+
+      eventBus.emit("youtube:search-results", {
+        items
+      });
+
+      if (!items.length) {
+        eventBus.emit("app:toast", {
+          message: "Không tìm thấy video phù hợp.",
+          type: "warning"
+        });
+      } else {
+        eventBus.emit("app:toast", {
+          message: `Tìm thấy ${items.length} video. Bấm để phát hoặc thêm vào hàng chờ.`,
+          type: "success"
+        });
+      }
+    } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
+
+      console.error("[KaraokeApp] Lỗi tìm kiếm YouTube:", error);
+
+      eventBus.emit("youtube:search-results", {
+        items: []
+      });
+
+      eventBus.emit("app:toast", {
+        message: error.message || "Không tìm kiếm được video YouTube.",
+        type: "error"
+      });
+    } finally {
+      this.state.isSearching = false;
+    }
+  }
+
+  handleSelectVideo(video) {
+    if (!video || !video.videoId) {
+      eventBus.emit("app:toast", {
+        message: "Không tìm thấy videoId của kết quả đã chọn.",
+        type: "error"
+      });
+
+      return;
+    }
+
+    if (this.isVideoCurrentlyActive()) {
+      this.videoQueue.enqueue(video);
+      this.emitQueueChanged();
+
+      eventBus.emit("app:toast", {
+        message: `Đã thêm vào hàng chờ: ${video.title}`,
+        type: "success"
+      });
+
+      return;
+    }
+
+    this.playVideoNow(video);
+  }
+
+  playVideoNow(video) {
+    this.clearAutoNextTimer();
+
+    this.state.currentVideoId = video.videoId;
+    this.state.currentVideoTitle = video.title;
+    this.state.playerState = "loading";
+
+    this.youtubePlayer.loadVideo(video.videoId, video.title);
+
+    eventBus.emit("app:toast", {
+      message: `Đang phát video: ${video.title}`,
+      type: "success"
+    });
+
+    eventBus.emit("ui:collapse-panel");
+  }
+
+  isVideoCurrentlyActive() {
+    if (!this.state.currentVideoId) {
+      return false;
+    }
+
+    const inactiveStates = new Set([
+      "idle",
+      "ended",
+      "stopped",
+      "error"
+    ]);
+
+    return !inactiveStates.has(this.state.playerState);
+  }
+
+  handleStopVideo() {
+    this.clearAutoNextTimer();
+
+    this.youtubePlayer.stopVideo();
+
+    this.state.playerState = "stopped";
+    this.state.currentVideoId = null;
+    this.state.currentVideoTitle = "";
+
+    eventBus.emit("app:toast", {
+      message: "Đã dừng bài hát. Hàng chờ vẫn được giữ lại.",
+      type: "info"
+    });
+
+    eventBus.emit("ui:expand-panel");
+  }
+
+  handleYouTubeState({ state, title }) {
+    this.state.playerState = state || this.state.playerState;
+
+    switch (state) {
+      case "playing":
+        eventBus.emit("app:toast", {
+          message: title ? `Đang phát: ${title}` : "Đang phát video.",
+          type: "info"
+        });
+        break;
+
+      case "paused":
+        console.log("[YouTube] Video đang tạm dừng.");
+        break;
+
+      case "buffering":
+        console.log("[YouTube] Đang tải dữ liệu video...");
+        break;
+
+      case "ended":
+        console.log("[YouTube] Video đã kết thúc.");
+        break;
+
+      case "stopped":
+        console.log("[YouTube] Video đã dừng.");
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  handleVideoEnded() {
+    this.state.playerState = "ended";
+
+    eventBus.emit("app:toast", {
+      message: "Bài hát đã kết thúc. Đang hiển thị điểm.",
+      type: "success"
+    });
+
     eventBus.emit("score:final", {
       finalScore: 86,
       pitchScore: 82,
@@ -163,15 +323,134 @@ class KaraokeApp {
       energyScore: 90,
       stabilityScore: 84
     });
+
+    if (CONFIG.queue?.autoPlayNext && this.videoQueue.hasNext()) {
+      const delay = CONFIG.queue.autoNextDelayMs ?? 3500;
+
+      eventBus.emit("app:toast", {
+        message: `Sẽ tự động phát bài tiếp theo sau ${Math.round(delay / 1000)} giây.`,
+        type: "info"
+      });
+
+      this.clearAutoNextTimer();
+
+      this.state.autoNextTimer = window.setTimeout(() => {
+        eventBus.emit("score:hide");
+        this.playNextFromQueue();
+      }, delay);
+    } else {
+      eventBus.emit("ui:expand-panel");
+    }
+  }
+
+  handleYouTubeError(payload) {
+    console.warn("[YouTube Error]", payload);
+
+    this.state.playerState = "error";
+
+    if (this.videoQueue.hasNext()) {
+      eventBus.emit("app:toast", {
+        message: "Video lỗi. Đang chuyển sang bài tiếp theo trong hàng chờ.",
+        type: "warning"
+      });
+
+      window.setTimeout(() => {
+        this.playNextFromQueue();
+      }, 800);
+    } else {
+      eventBus.emit("ui:expand-panel");
+    }
+  }
+
+  playNextFromQueue() {
+    const nextVideo = this.videoQueue.dequeue();
+
+    this.emitQueueChanged();
+
+    if (!nextVideo) {
+      this.state.currentVideoId = null;
+      this.state.currentVideoTitle = "";
+      this.state.playerState = "idle";
+
+      eventBus.emit("ui:expand-panel");
+
+      return;
+    }
+
+    this.playVideoNow(nextVideo);
+  }
+
+  handleClearQueue() {
+    this.videoQueue.clear();
+    this.emitQueueChanged();
+
+    eventBus.emit("app:toast", {
+      message: "Đã xóa toàn bộ hàng chờ.",
+      type: "info"
+    });
+  }
+
+  handleRemoveQueueItem(index) {
+    const removed = this.videoQueue.removeAt(index);
+    this.emitQueueChanged();
+
+    if (removed) {
+      eventBus.emit("app:toast", {
+        message: `Đã xóa khỏi hàng chờ: ${removed.title}`,
+        type: "info"
+      });
+    }
+  }
+
+  emitQueueChanged() {
+    eventBus.emit("queue:changed", {
+      items: this.videoQueue.getItems(),
+      count: this.videoQueue.size()
+    });
+  }
+
+  clearAutoNextTimer() {
+    if (this.state.autoNextTimer) {
+      window.clearTimeout(this.state.autoNextTimer);
+      this.state.autoNextTimer = null;
+    }
+  }
+
+  handleTemporaryMicToggle() {
+    this.state.micEnabled = !this.state.micEnabled;
+
+    eventBus.emit("mic:status", {
+      enabled: this.state.micEnabled,
+      message: this.state.micEnabled ? "Mic demo đang bật" : "Mic đã tắt",
+      detail: this.state.micEnabled
+        ? "AudioEngine thật sẽ được thêm ở Phần 4."
+        : "Nhấn Bật Mic để cấp quyền micro."
+    });
+
+    eventBus.emit("singer:active", {
+      singerId: "singer1",
+      active: this.state.micEnabled,
+      rms: this.state.micEnabled ? 0.08 : 0,
+      pitch: this.state.micEnabled ? 220 : 0
+    });
+
+    eventBus.emit("singer:active", {
+      singerId: "singer2",
+      active: false,
+      rms: 0,
+      pitch: 0
+    });
   }
 
   printBanner() {
-    console.log(`
+    console.log(
+      `
 %c${CONFIG.appName}
 %cFrontend: HTML5, CSS3, Vanilla JavaScript
 3D: Three.js
 Audio: Web Audio API
 YouTube: IFrame API + Data API v3
+Queue: Enabled
 `,
       "color:#38bdf8;font-size:18px;font-weight:bold;",
       "color:#94a3b8;font-size:12px;"
@@ -181,6 +460,7 @@ YouTube: IFrame API + Data API v3
 
 window.addEventListener("DOMContentLoaded", () => {
   const app = new KaraokeApp();
+
   app.init();
 
   window.karaokeApp = app;

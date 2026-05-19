@@ -2,13 +2,13 @@ const CONFIG = {
   appName: "Hệ thống Karaoke 3D trực tuyến",
 
   youtube: {
-    apiKey: "YOUR_YOUTUBE_DATA_API_KEY_HERE",
+    apiKey: "***REMOVED***",
     maxResults: 8,
     regionCode: "VN",
     relevanceLanguage: "vi",
 
     playerVars: {
-      autoplay: 0,
+      autoplay: 1,
       controls: 1,
       rel: 0,
       modestbranding: 1,
@@ -50,6 +50,11 @@ const CONFIG = {
     toastDurationMs: 2600,
     searchDebounceMs: 450,
     suggestionDebounceMs: 250
+  },
+
+  queue: {
+    autoPlayNext: true,
+    autoNextDelayMs: 3500
   },
 
   sfx: {

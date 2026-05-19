@@ -27,7 +27,10 @@ class ControlPanel {
     this.elements.suggestionList = document.querySelector("#suggestion-list");
     this.elements.searchResults = document.querySelector("#search-results");
 
-    this.elements.btnPlayPause = document.querySelector("#btn-play-pause");
+    this.elements.queueList = document.querySelector("#queue-list");
+    this.elements.queueCount = document.querySelector("#queue-count");
+    this.elements.btnClearQueue = document.querySelector("#btn-clear-queue");
+
     this.elements.btnStop = document.querySelector("#btn-stop");
 
     this.elements.btnToggleMic = document.querySelector("#btn-toggle-mic");
@@ -52,27 +55,27 @@ class ControlPanel {
   }
 
   bindEvents() {
-    this.elements.btnCollapse.addEventListener("click", () => {
+    this.elements.btnCollapse?.addEventListener("click", () => {
       sfxManager.playClick();
       this.collapse();
     });
 
-    this.elements.btnExpandPanel.addEventListener("click", () => {
+    this.elements.btnExpandPanel?.addEventListener("click", () => {
       sfxManager.playOpen();
       this.expand();
     });
 
-    this.elements.btnSearch.addEventListener("click", () => {
+    this.elements.btnSearch?.addEventListener("click", () => {
       this.submitSearch();
     });
 
-    this.elements.searchInput.addEventListener("keydown", (event) => {
+    this.elements.searchInput?.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         this.submitSearch();
       }
     });
 
-    this.elements.searchInput.addEventListener("input", () => {
+    this.elements.searchInput?.addEventListener("input", () => {
       const keyword = this.getSearchKeyword();
 
       eventBus.emit("ui:search-input", {
@@ -80,22 +83,22 @@ class ControlPanel {
       });
     });
 
-    this.elements.btnPlayPause.addEventListener("click", () => {
+    this.elements.btnClearQueue?.addEventListener("click", () => {
       sfxManager.playClick();
-      eventBus.emit("ui:toggle-play");
+      eventBus.emit("queue:clear");
     });
 
-    this.elements.btnStop.addEventListener("click", () => {
+    this.elements.btnStop?.addEventListener("click", () => {
       sfxManager.playClick();
       eventBus.emit("ui:stop");
     });
 
-    this.elements.btnToggleMic.addEventListener("click", () => {
+    this.elements.btnToggleMic?.addEventListener("click", () => {
       sfxManager.playClick();
       eventBus.emit("ui:toggle-mic");
     });
 
-    this.elements.btnCloseScore.addEventListener("click", () => {
+    this.elements.btnCloseScore?.addEventListener("click", () => {
       sfxManager.playClick();
       this.hideScoreModal();
     });
@@ -134,13 +137,21 @@ class ControlPanel {
       this.renderSearchResults(payload.items || []);
     });
 
+    eventBus.on("queue:changed", (payload) => {
+      this.renderQueue(payload.items || []);
+    });
+
     eventBus.on("score:final", (payload) => {
       this.showScoreModal(payload);
+    });
+
+    eventBus.on("score:hide", () => {
+      this.hideScoreModal();
     });
   }
 
   getSearchKeyword() {
-    return this.elements.searchInput.value.trim();
+    return this.elements.searchInput?.value.trim() || "";
   }
 
   submitSearch() {
@@ -164,18 +175,22 @@ class ControlPanel {
   collapse() {
     this.isCollapsed = true;
 
-    this.elements.controlPanel.classList.add("collapsed");
-    this.elements.btnExpandPanel.classList.remove("hidden");
+    this.elements.controlPanel?.classList.add("collapsed");
+    this.elements.btnExpandPanel?.classList.remove("hidden");
   }
 
   expand() {
     this.isCollapsed = false;
 
-    this.elements.controlPanel.classList.remove("collapsed");
-    this.elements.btnExpandPanel.classList.add("hidden");
+    this.elements.controlPanel?.classList.remove("collapsed");
+    this.elements.btnExpandPanel?.classList.add("hidden");
   }
 
   updateMicStatus({ enabled, message, detail }) {
+    if (!this.elements.micStatus || !this.elements.btnToggleMic) {
+      return;
+    }
+
     if (enabled) {
       this.elements.micStatus.textContent = message || "Mic đang bật";
       this.elements.micStatus.classList.add("text-success");
@@ -184,13 +199,15 @@ class ControlPanel {
       this.elements.btnToggleMic.textContent = "Tắt Mic";
     } else {
       this.elements.micStatus.textContent = message || "Mic chưa bật";
-      this.elements.micStatus.classList.remove("text-success");
+      this.elements.micStatus.classList.remove("text-success", "text-danger");
       this.elements.micStatus.classList.add("text-warning");
 
       this.elements.btnToggleMic.textContent = "Bật Mic";
     }
 
-    this.elements.micDetail.textContent = detail || "";
+    if (this.elements.micDetail) {
+      this.elements.micDetail.textContent = detail || "";
+    }
   }
 
   updateSingerStatus({ singerId, active, rms, pitch }) {
@@ -222,6 +239,10 @@ class ControlPanel {
   }
 
   renderSuggestions(suggestions) {
+    if (!this.elements.suggestionList) {
+      return;
+    }
+
     this.elements.suggestionList.innerHTML = "";
 
     if (!suggestions.length) {
@@ -235,7 +256,10 @@ class ControlPanel {
       li.textContent = suggestion;
 
       li.addEventListener("click", () => {
-        this.elements.searchInput.value = suggestion;
+        if (this.elements.searchInput) {
+          this.elements.searchInput.value = suggestion;
+        }
+
         this.clearSuggestions();
 
         eventBus.emit("ui:search-submit", {
@@ -250,10 +274,16 @@ class ControlPanel {
   }
 
   clearSuggestions() {
-    this.elements.suggestionList.innerHTML = "";
+    if (this.elements.suggestionList) {
+      this.elements.suggestionList.innerHTML = "";
+    }
   }
 
   renderSearchResults(items) {
+    if (!this.elements.searchResults) {
+      return;
+    }
+
     this.elements.searchResults.innerHTML = "";
 
     if (!items.length) {
@@ -263,15 +293,16 @@ class ControlPanel {
           <p>Hãy thử từ khóa khác.</p>
         </div>
       `;
+
       return;
     }
 
     const fragment = document.createDocumentFragment();
 
     items.forEach((item) => {
-      const button = document.createElement("article");
+      const button = document.createElement("button");
+      button.type = "button";
       button.className = "search-result-item";
-      button.tabIndex = 0;
 
       button.innerHTML = `
         <img src="${this.escapeHtml(item.thumbnail)}" alt="">
@@ -286,14 +317,10 @@ class ControlPanel {
 
         eventBus.emit("youtube:select-video", {
           videoId: item.videoId,
-          title: item.title
+          title: item.title,
+          channelTitle: item.channelTitle,
+          thumbnail: item.thumbnail
         });
-      });
-
-      button.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          button.click();
-        }
       });
 
       fragment.appendChild(button);
@@ -302,7 +329,70 @@ class ControlPanel {
     this.elements.searchResults.appendChild(fragment);
   }
 
+  renderQueue(items) {
+    if (!this.elements.queueList) {
+      return;
+    }
+
+    if (this.elements.queueCount) {
+      this.elements.queueCount.textContent =
+        items.length === 0
+          ? "0 bài trong hàng chờ"
+          : `${items.length} bài trong hàng chờ`;
+    }
+
+    this.elements.queueList.innerHTML = "";
+
+    if (!items.length) {
+      this.elements.queueList.innerHTML = `
+        <div class="queue-empty">
+          Chưa có bài nào trong hàng chờ.
+        </div>
+      `;
+
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    items.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "queue-item";
+
+      row.innerHTML = `
+        <div class="queue-index">${index + 1}</div>
+
+        <div class="queue-info">
+          <strong>${this.escapeHtml(item.title)}</strong>
+          <span>${this.escapeHtml(item.channelTitle || "YouTube")}</span>
+        </div>
+
+        <button class="queue-remove-button" type="button" title="Xóa khỏi hàng chờ">
+          ×
+        </button>
+      `;
+
+      const removeButton = row.querySelector(".queue-remove-button");
+
+      removeButton.addEventListener("click", () => {
+        sfxManager.playClick();
+
+        eventBus.emit("queue:remove", {
+          index
+        });
+      });
+
+      fragment.appendChild(row);
+    });
+
+    this.elements.queueList.appendChild(fragment);
+  }
+
   showScoreModal(scoreData) {
+    if (!this.elements.scoreModal) {
+      return;
+    }
+
     const {
       finalScore = 0,
       pitchScore = 0,
@@ -311,20 +401,37 @@ class ControlPanel {
       stabilityScore = 0
     } = scoreData || {};
 
-    this.elements.finalScoreValue.textContent = Math.round(finalScore);
-    this.elements.pitchScore.textContent = Math.round(pitchScore);
-    this.elements.rhythmScore.textContent = Math.round(rhythmScore);
-    this.elements.energyScore.textContent = Math.round(energyScore);
-    this.elements.stabilityScore.textContent = Math.round(stabilityScore);
+    if (this.elements.finalScoreValue) {
+      this.elements.finalScoreValue.textContent = Math.round(finalScore);
+    }
 
-    this.elements.scoreComment.textContent = this.getScoreComment(finalScore);
+    if (this.elements.pitchScore) {
+      this.elements.pitchScore.textContent = Math.round(pitchScore);
+    }
+
+    if (this.elements.rhythmScore) {
+      this.elements.rhythmScore.textContent = Math.round(rhythmScore);
+    }
+
+    if (this.elements.energyScore) {
+      this.elements.energyScore.textContent = Math.round(energyScore);
+    }
+
+    if (this.elements.stabilityScore) {
+      this.elements.stabilityScore.textContent = Math.round(stabilityScore);
+    }
+
+    if (this.elements.scoreComment) {
+      this.elements.scoreComment.textContent = this.getScoreComment(finalScore);
+    }
+
     this.elements.scoreModal.classList.remove("hidden");
 
     sfxManager.playSuccess();
   }
 
   hideScoreModal() {
-    this.elements.scoreModal.classList.add("hidden");
+    this.elements.scoreModal?.classList.add("hidden");
   }
 
   getScoreComment(score) {
@@ -351,7 +458,7 @@ class ControlPanel {
     }
 
     toast.textContent = message;
-    toast.className = `toast`;
+    toast.className = "toast";
 
     if (type === "success") {
       toast.classList.add("text-success");
