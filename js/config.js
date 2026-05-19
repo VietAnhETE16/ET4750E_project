@@ -2,7 +2,7 @@ const CONFIG = {
   appName: "Hệ thống Karaoke 3D trực tuyến",
 
   youtube: {
-    apiKey: "***REMOVED***",
+    apiKey: "your_api_key_here",
     maxResults: 8,
     regionCode: "VN",
     relevanceLanguage: "vi",
