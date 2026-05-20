@@ -78,8 +78,8 @@ class KaraokeApp {
       this.handleSelectVideo(payload);
     });
 
-    eventBus.on("ui:stop", () => {
-      this.handleStopVideo();
+    eventBus.on("ui:skip", () => {
+      this.handleSkipVideo();
     });
 
     eventBus.on("ui:toggle-mic", () => {
@@ -259,22 +259,39 @@ class KaraokeApp {
     return !inactiveStates.has(this.state.playerState);
   }
 
-  handleStopVideo() {
+  handleSkipVideo() {
     this.clearAutoNextTimer();
+
+    eventBus.emit("score:hide");
+
+    if (this.videoQueue.hasNext()) {
+      const skippedTitle = this.state.currentVideoTitle || "bài hiện tại";
+      const nextVideo = this.videoQueue.dequeue();
+
+      this.emitQueueChanged();
+
+      eventBus.emit("app:toast", {
+        message: `Đã bỏ qua "${skippedTitle}". Đang chuyển sang: ${nextVideo.title}`,
+        type: "info"
+      });
+
+      this.playVideoNow(nextVideo);
+      return;
+    }
 
     this.youtubePlayer.stopVideo();
 
-    this.state.playerState = "stopped";
     this.state.currentVideoId = null;
     this.state.currentVideoTitle = "";
+    this.state.playerState = "stopped";
 
     eventBus.emit("app:toast", {
-      message: "Đã dừng bài hát. Hàng chờ vẫn được giữ lại.",
+      message: "Đã bỏ qua bài hiện tại. Không còn bài nào trong hàng chờ.",
       type: "info"
     });
 
     eventBus.emit("ui:expand-panel");
-  }
+  }  
 
   handleYouTubeState({ state, title }) {
     this.state.playerState = state || this.state.playerState;

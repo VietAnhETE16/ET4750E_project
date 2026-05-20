@@ -31,7 +31,7 @@ class ControlPanel {
     this.elements.queueCount = document.querySelector("#queue-count");
     this.elements.btnClearQueue = document.querySelector("#btn-clear-queue");
 
-    this.elements.btnStop = document.querySelector("#btn-stop");
+    this.elements.btnSkip = document.querySelector("#btn-skip");
 
     this.elements.btnToggleMic = document.querySelector("#btn-toggle-mic");
     this.elements.micStatus = document.querySelector("#mic-status");
@@ -88,9 +88,9 @@ class ControlPanel {
       eventBus.emit("queue:clear");
     });
 
-    this.elements.btnStop?.addEventListener("click", () => {
+    this.elements.btnSkip?.addEventListener("click", () => {
       sfxManager.playClick();
-      eventBus.emit("ui:stop");
+      eventBus.emit("ui:skip");
     });
 
     this.elements.btnToggleMic?.addEventListener("click", () => {

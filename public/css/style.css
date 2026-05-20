@@ -876,3 +876,13 @@ kbd {
 .queue-remove-button:hover {
   background: rgba(251, 113, 133, 0.28);
 }
+
+#btn-skip {
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fef3c7;
+}
+
+#btn-skip:hover {
+  background: rgba(250, 204, 21, 0.22);
+}
