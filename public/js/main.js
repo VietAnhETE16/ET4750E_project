@@ -9,6 +9,9 @@ import SuggestService from "./youtube/SuggestService.js";
 import YouTubeSearch from "./youtube/YouTubeSearch.js";
 import YouTubePlayer from "./youtube/YouTubePlayer.js";
 import VideoQueue from "./youtube/VideoQueue.js";
+import ThreeStage from "./stage/ThreeStage.js";
+import AudioEngine from "./audio/AudioEngine.js";
+import ScoreEngine from "./score/ScoreEngine.js";
 
 class KaraokeApp {
   constructor() {
@@ -19,6 +22,9 @@ class KaraokeApp {
     this.youtubeSearch = new YouTubeSearch();
     this.youtubePlayer = new YouTubePlayer();
     this.videoQueue = new VideoQueue();
+    this.threeStage = new ThreeStage();
+    this.audioEngine = new AudioEngine();
+    this.scoreEngine = new ScoreEngine();
 
     this.state = {
       micEnabled: false,
@@ -41,6 +47,17 @@ class KaraokeApp {
 
     this.bindEvents();
     this.emitQueueChanged();
+    
+    try {
+      await this.threeStage.init();
+    } catch (error) {
+      console.error("[KaraokeApp] Không khởi tạo được sân khấu 3D:", error);
+
+      eventBus.emit("app:toast", {
+        message: "Không khởi tạo được sân khấu 3D.",
+        type: "error"
+      });
+    }
 
     eventBus.emit("mic:status", {
       enabled: false,
@@ -83,11 +100,23 @@ class KaraokeApp {
     });
 
     eventBus.on("ui:toggle-mic", () => {
-      this.handleTemporaryMicToggle();
+      this.handleToggleMic();
+    });
+
+    eventBus.on("ui:calibrate-singer", ({ singerId }) => {
+      this.handleCalibrateSinger(singerId);
+    });
+
+    eventBus.on("audio:data", (payload) => {
+      this.handleAudioData(payload);
     });
 
     eventBus.on("youtube:state", (payload) => {
       this.handleYouTubeState(payload);
+    });
+
+    eventBus.on("score:start", (payload) => {
+      this.handleScoreStart(payload);
     });
 
     eventBus.on("youtube:ended", (payload) => {
@@ -262,6 +291,8 @@ class KaraokeApp {
   handleSkipVideo() {
     this.clearAutoNextTimer();
 
+    this.scoreEngine.cancel();
+
     eventBus.emit("score:hide");
 
     if (this.videoQueue.hasNext()) {
@@ -333,13 +364,26 @@ class KaraokeApp {
       type: "success"
     });
 
-    eventBus.emit("score:final", {
-      finalScore: 86,
-      pitchScore: 82,
-      rhythmScore: 88,
-      energyScore: 90,
-      stabilityScore: 84
-    });
+    // Tính điểm thật từ dữ liệu audio đã thu trong lúc hát.
+    this.scoreEngine.finish();
+
+    if (CONFIG.queue?.autoPlayNext && this.videoQueue.hasNext()) {
+      const delay = CONFIG.queue.autoNextDelayMs ?? 3500;
+
+      eventBus.emit("app:toast", {
+        message: `Sẽ tự động phát bài tiếp theo sau ${Math.round(delay / 1000)} giây.`,
+        type: "info"
+      });
+
+      this.clearAutoNextTimer();
+
+      this.state.autoNextTimer = window.setTimeout(() => {
+        eventBus.emit("score:hide");
+        this.playNextFromQueue();
+      }, delay);
+    } else {
+      eventBus.emit("ui:expand-panel");
+    }
 
     if (CONFIG.queue?.autoPlayNext && this.videoQueue.hasNext()) {
       const delay = CONFIG.queue.autoNextDelayMs ?? 3500;
@@ -362,6 +406,8 @@ class KaraokeApp {
 
   handleYouTubeError(payload) {
     console.warn("[YouTube Error]", payload);
+
+    this.scoreEngine.cancel();
 
     this.state.playerState = "error";
 
@@ -433,29 +479,84 @@ class KaraokeApp {
     }
   }
 
-  handleTemporaryMicToggle() {
-    this.state.micEnabled = !this.state.micEnabled;
+  async handleToggleMic() {
+    try {
+      await this.audioEngine.toggle();
 
-    eventBus.emit("mic:status", {
-      enabled: this.state.micEnabled,
-      message: this.state.micEnabled ? "Mic demo đang bật" : "Mic đã tắt",
-      detail: this.state.micEnabled
-        ? "AudioEngine thật sẽ được thêm ở Phần 4."
-        : "Nhấn Bật Mic để cấp quyền micro."
+      this.state.micEnabled = this.audioEngine.enabled;
+    } catch (error) {
+      console.error("[KaraokeApp] Không bật được microphone:", error);
+
+      eventBus.emit("mic:status", {
+        enabled: false,
+        message: "Không bật được Mic",
+        detail: error.message || "Hãy kiểm tra quyền microphone của trình duyệt."
+      });
+
+      eventBus.emit("app:toast", {
+        message: "Không bật được microphone. Hãy kiểm tra quyền truy cập mic.",
+        type: "error"
+      });
+    }
+  }
+
+  handleCalibrateSinger(singerId) {
+    try {
+      this.audioEngine.startCalibration(singerId);
+    } catch (error) {
+      console.error("[KaraokeApp] Calibration lỗi:", error);
+
+      eventBus.emit("app:toast", {
+        message: error.message || "Không thể calibration giọng.",
+        type: "error"
+      });
+    }
+  }
+
+  handleAudioData(payload) {
+    // Gửi dữ liệu mic cho ScoreEngine để chấm điểm ngầm.
+    this.scoreEngine.addAudioFrame(payload);
+
+    // Log debug gọn, không ảnh hưởng logic.
+    if (payload.mode === "dual-channel") {
+      const singer1 = payload.singers?.singer1;
+      const singer2 = payload.singers?.singer2;
+
+      if (singer1?.active || singer2?.active) {
+        console.log("[Audio Dual]", {
+          singer1: {
+            active: singer1?.active,
+            rms: Number(singer1?.rms || 0).toFixed(4),
+            pitch: Math.round(singer1?.pitch || 0)
+          },
+          singer2: {
+            active: singer2?.active,
+            rms: Number(singer2?.rms || 0).toFixed(4),
+            pitch: Math.round(singer2?.pitch || 0)
+          }
+        });
+      }
+
+      return;
+    }
+
+    if (!payload.active) {
+      return;
+    }
+
+    console.log("[Audio Mixed]", {
+      singerId: payload.singerId,
+      rms: Number(payload.rms || 0).toFixed(4),
+      pitch: Math.round(payload.pitch || 0),
+      confidence: Number(payload.confidence || 0).toFixed(2),
+      reason: payload.reason
     });
+  }
 
-    eventBus.emit("singer:active", {
-      singerId: "singer1",
-      active: this.state.micEnabled,
-      rms: this.state.micEnabled ? 0.08 : 0,
-      pitch: this.state.micEnabled ? 220 : 0
-    });
-
-    eventBus.emit("singer:active", {
-      singerId: "singer2",
-      active: false,
-      rms: 0,
-      pitch: 0
+  handleScoreStart(payload) {
+    this.scoreEngine.start({
+      videoId: payload.videoId || this.state.currentVideoId,
+      title: payload.title || this.state.currentVideoTitle
     });
   }
 

@@ -80,7 +80,7 @@ button {
 /* Không dùng translateZ trực tiếp lên iframe nữa */
 .youtube-screen-frame {
   position: absolute;
-  inset: 5% 8%;
+  inset: 25% 30%;
   border-radius: 32px;
   overflow: hidden;
 
@@ -885,4 +885,26 @@ kbd {
 
 #btn-skip:hover {
   background: rgba(250, 204, 21, 0.22);
+}
+
+.calibration-box {
+  margin-top: 10px;
+  padding: 12px;
+
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.calibration-box p {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.calibration-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }

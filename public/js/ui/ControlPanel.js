@@ -37,6 +37,10 @@ class ControlPanel {
     this.elements.micStatus = document.querySelector("#mic-status");
     this.elements.micDetail = document.querySelector("#mic-detail");
 
+    this.elements.btnCalibrateSinger1 = document.querySelector("#btn-calibrate-singer1");
+    this.elements.btnCalibrateSinger2 = document.querySelector("#btn-calibrate-singer2");
+    this.elements.calibrationStatus = document.querySelector("#calibration-status");
+
     this.elements.singer1Card = document.querySelector("#singer-1-card");
     this.elements.singer2Card = document.querySelector("#singer-2-card");
     this.elements.singer1Status = document.querySelector("#singer-1-status");
@@ -98,6 +102,22 @@ class ControlPanel {
       eventBus.emit("ui:toggle-mic");
     });
 
+    this.elements.btnCalibrateSinger1?.addEventListener("click", () => {
+      sfxManager.playClick();
+
+      eventBus.emit("ui:calibrate-singer", {
+        singerId: "singer1"
+      });
+    });
+
+    this.elements.btnCalibrateSinger2?.addEventListener("click", () => {
+      sfxManager.playClick();
+
+      eventBus.emit("ui:calibrate-singer", {
+        singerId: "singer2"
+      });
+    });
+
     this.elements.btnCloseScore?.addEventListener("click", () => {
       sfxManager.playClick();
       this.hideScoreModal();
@@ -147,6 +167,29 @@ class ControlPanel {
 
     eventBus.on("score:hide", () => {
       this.hideScoreModal();
+    });
+
+    eventBus.on("audio:calibration-start", ({ singerId }) => {
+      this.updateCalibrationStatus({
+        message: `Đang calibration ${this.getSingerLabel(singerId)}. Hãy hát/nói rõ vào mic...`,
+        type: "warning"
+      });
+    });
+
+    eventBus.on("audio:calibration-progress", ({ singerId, progress }) => {
+      const percent = Math.round((progress || 0) * 100);
+
+      this.updateCalibrationStatus({
+        message: `Đang calibration ${this.getSingerLabel(singerId)}: ${percent}%`,
+        type: "warning"
+      });
+    });
+
+    eventBus.on("audio:calibration-complete", ({ singerId }) => {
+      this.updateCalibrationStatus({
+        message: `Đã calibration xong ${this.getSingerLabel(singerId)}.`,
+        type: "success"
+      });
     });
   }
 
@@ -436,18 +479,22 @@ class ControlPanel {
 
   getScoreComment(score) {
     if (score >= 90) {
-      return "Xuất sắc! Màn trình diễn rất ấn tượng.";
+      return "Xuất sắc! Giọng hát rõ, ổn định và giàu năng lượng.";
     }
 
     if (score >= 75) {
-      return "Rất tốt! Bạn hát khá ổn định.";
+      return "Rất tốt! Bạn hát khá ổn định, năng lượng tốt.";
     }
 
     if (score >= 60) {
-      return "Khá ổn! Có thể cải thiện thêm nhịp và cao độ.";
+      return "Khá ổn! Có thể cải thiện thêm độ ổn định và nhịp hát.";
     }
 
-    return "Bạn đã hoàn thành bài hát. Hãy thử lại để đạt điểm cao hơn.";
+    if (score >= 35) {
+      return "Bạn đã hoàn thành bài hát. Hãy hát rõ hơn và giữ mic ổn định hơn.";
+    }
+
+    return "Hệ thống ghi nhận quá ít giọng hát. Hãy bật mic và hát rõ hơn.";
   }
 
   showToast(message, type = "info") {
@@ -477,6 +524,44 @@ class ControlPanel {
     this.toastTimer = window.setTimeout(() => {
       toast.classList.add("hidden");
     }, CONFIG.ui.toastDurationMs);
+  }
+
+  updateCalibrationStatus({ message, type = "info" }) {
+    if (!this.elements.calibrationStatus) {
+      return;
+    }
+
+    this.elements.calibrationStatus.textContent = message;
+
+    this.elements.calibrationStatus.classList.remove(
+      "text-success",
+      "text-warning",
+      "text-danger"
+    );
+
+    if (type === "success") {
+      this.elements.calibrationStatus.classList.add("text-success");
+    }
+
+    if (type === "warning") {
+      this.elements.calibrationStatus.classList.add("text-warning");
+    }
+
+    if (type === "error") {
+      this.elements.calibrationStatus.classList.add("text-danger");
+    }
+  }
+
+  getSingerLabel(singerId) {
+    if (singerId === "singer1") {
+      return "Ca sĩ 1";
+    }
+
+    if (singerId === "singer2") {
+      return "Ca sĩ 2";
+    }
+
+    return "Ca sĩ";
   }
 
   escapeHtml(value) {

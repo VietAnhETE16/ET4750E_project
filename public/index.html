@@ -109,6 +109,22 @@
                 Bật Mic
               </button>
             </div>
+
+            <div class="calibration-box">
+              <p id="calibration-status">
+                Chưa calibration giọng ca sĩ.
+              </p>
+
+              <div class="calibration-buttons">
+                <button id="btn-calibrate-singer1" class="small-button" type="button">
+                  Calib Ca sĩ 1
+                </button>
+
+                <button id="btn-calibrate-singer2" class="small-button" type="button">
+                  Calib Ca sĩ 2
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Singer Status -->
@@ -206,6 +222,15 @@
     <!-- Toast -->
     <div id="toast" class="toast hidden"></div>
   </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 
   <script type="module" src="./js/main.js"></script>
 </body>
