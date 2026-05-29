@@ -7,7 +7,7 @@ class ModelLoader {
     this.cache = new Map();
   }
 
-  async loadGLB(path) {
+  async loadModel(path) {
     if (!path) {
       throw new Error("Thiếu đường dẫn model .glb.");
     }

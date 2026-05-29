@@ -39,7 +39,10 @@ class ControlPanel {
 
     this.elements.btnCalibrateSinger1 = document.querySelector("#btn-calibrate-singer1");
     this.elements.btnCalibrateSinger2 = document.querySelector("#btn-calibrate-singer2");
+    this.elements.btnClearCalibration = document.querySelector("#btn-clear-calibration");
     this.elements.calibrationStatus = document.querySelector("#calibration-status");
+    this.elements.sliderSensitivity = document.querySelector("#slider-sensitivity");
+    this.elements.sensitivityValue = document.querySelector("#sensitivity-value");
 
     this.elements.singer1Card = document.querySelector("#singer-1-card");
     this.elements.singer2Card = document.querySelector("#singer-2-card");
@@ -118,6 +121,20 @@ class ControlPanel {
       });
     });
 
+    this.elements.btnClearCalibration?.addEventListener("click", () => {
+      sfxManager.playClick();
+
+      const confirmed = window.confirm(
+        "Bạn có chắc muốn xóa dữ liệu calibration cũ của cả 2 ca sĩ không?"
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      eventBus.emit("ui:clear-calibration");
+    });
+
     this.elements.btnCloseScore?.addEventListener("click", () => {
       sfxManager.playClick();
       this.hideScoreModal();
@@ -189,6 +206,13 @@ class ControlPanel {
       this.updateCalibrationStatus({
         message: `Đã calibration xong ${this.getSingerLabel(singerId)}.`,
         type: "success"
+      });
+    });
+
+    eventBus.on("audio:calibration-cleared", () => {
+      this.updateCalibrationStatus({
+        message: "Đã xóa calibration cũ. Hãy calib lại Ca sĩ 1 và Ca sĩ 2.",
+        type: "warning"
       });
     });
   }
@@ -479,22 +503,26 @@ class ControlPanel {
 
   getScoreComment(score) {
     if (score >= 90) {
-      return "Xuất sắc! Giọng hát rõ, ổn định và giàu năng lượng.";
+      return "Xuất sắc! Màn trình diễn rất ấn tượng.";
     }
 
-    if (score >= 75) {
-      return "Rất tốt! Bạn hát khá ổn định, năng lượng tốt.";
+    if (score >= 80) {
+      return "Rất tốt! Bạn hát rõ và giữ năng lượng ổn định.";
+    }
+
+    if (score >= 70) {
+      return "Tốt! Màn trình diễn khá ổn.";
     }
 
     if (score >= 60) {
-      return "Khá ổn! Có thể cải thiện thêm độ ổn định và nhịp hát.";
+      return "Khá ổn! Hãy thử hát rõ hơn để tăng điểm.";
     }
 
-    if (score >= 35) {
-      return "Bạn đã hoàn thành bài hát. Hãy hát rõ hơn và giữ mic ổn định hơn.";
+    if (score >= 45) {
+      return "Bạn đã hoàn thành bài hát. Hãy giữ mic gần hơn và hát rõ hơn.";
     }
 
-    return "Hệ thống ghi nhận quá ít giọng hát. Hãy bật mic và hát rõ hơn.";
+    return "Hệ thống ghi nhận ít giọng hát. Hãy kiểm tra mic và thử lại.";
   }
 
   showToast(message, type = "info") {

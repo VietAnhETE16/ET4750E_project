@@ -16,7 +16,6 @@ class ScoreEngine {
     this.endedAt = 0;
 
     this.frames = [];
-
     this.lastFrameTime = 0;
   }
 
@@ -25,8 +24,6 @@ class ScoreEngine {
       return;
     }
 
-    // Nếu YouTube phát event PLAYING nhiều lần do buffering,
-    // không reset điểm nếu vẫn là cùng một video.
     if (this.active && this.videoId === videoId) {
       return;
     }
@@ -68,7 +65,6 @@ class ScoreEngine {
       return [];
     }
 
-    // Hỗ trợ nếu sau này dùng dual-channel.
     if (payload.mode === "dual-channel") {
       const singer1 = payload.singers?.singer1;
       const singer2 = payload.singers?.singer2;
@@ -86,7 +82,6 @@ class ScoreEngine {
       return frames;
     }
 
-    // Cơ chế nhận diện ban đầu: mixed speaker detection.
     return [
       {
         time: now,
@@ -117,9 +112,7 @@ class ScoreEngine {
   finish() {
     if (!this.active) {
       const emptyScore = this.createEmptyScore();
-
       eventBus.emit("score:final", emptyScore);
-
       return emptyScore;
     }
 
@@ -137,7 +130,6 @@ class ScoreEngine {
 
   cancel() {
     this.reset();
-
     eventBus.emit("score:cancelled");
   }
 
@@ -149,10 +141,7 @@ class ScoreEngine {
     const totalFrames = this.frames.length;
 
     const voicedFrames = this.frames.filter((frame) => {
-      return (
-        frame.active &&
-        frame.rms >= CONFIG.audio.minRmsForVoice
-      );
+      return frame.active && frame.rms >= CONFIG.audio.minRmsForVoice;
     });
 
     const pitchFrames = voicedFrames.filter((frame) => {
@@ -171,6 +160,7 @@ class ScoreEngine {
     const durationSeconds = durationMs / 1000;
 
     const voiceRatio = voicedFrames.length / totalFrames;
+
     const pitchValidRatio =
       voicedFrames.length > 0 ? pitchFrames.length / voicedFrames.length : 0;
 
@@ -183,7 +173,8 @@ class ScoreEngine {
 
     const pitchScore = this.calculatePitchScore({
       pitchFrames,
-      pitchValidRatio
+      pitchValidRatio,
+      voiceRatio
     });
 
     const stabilityScore = this.calculateStabilityScore({
@@ -199,14 +190,22 @@ class ScoreEngine {
       stabilityScore * weights.stabilityWeight +
       energyScore * weights.energyWeight;
 
-    // Nếu gần như không hát thì ép điểm thấp.
-    if (voiceRatio < 0.08) {
-      finalScore = Math.min(finalScore, 35);
+    // Dễ tính hơn: nếu có hát thì đảm bảo điểm nền.
+    if (voiceRatio >= CONFIG.scoring.minVoiceRatioForBaseScore) {
+      finalScore = Math.max(finalScore, CONFIG.scoring.baseScoreWhenSinging);
     }
 
-    // Nếu không có pitch hợp lệ thì không thể cho điểm cao.
-    if (pitchValidRatio < 0.15) {
-      finalScore = Math.min(finalScore, 55);
+    // Cộng bonus nhẹ cho demo.
+    finalScore += CONFIG.scoring.friendlyBonus || 0;
+
+    // Chỉ phạt nặng nếu gần như không hát.
+    if (voiceRatio < 0.015) {
+      finalScore = Math.min(finalScore, 25);
+    }
+
+    // Nếu không bắt được pitch thì vẫn cho điểm, không ép quá thấp.
+    if (pitchValidRatio < 0.05 && voiceRatio >= 0.08) {
+      finalScore = Math.max(finalScore, 55);
     }
 
     finalScore = this.clamp(finalScore, 0, 100);
@@ -246,19 +245,18 @@ class ScoreEngine {
     const avgRms = this.mean(rmsValues);
 
     const minVoice = CONFIG.audio.minRmsForVoice;
-    const targetRms = CONFIG.scoring.targetRms || 0.08;
-    const tooLoudRms = CONFIG.scoring.tooLoudRms || 0.22;
+    const targetRms = CONFIG.scoring.targetRms || 0.045;
+    const tooLoudRms = CONFIG.scoring.tooLoudRms || 0.35;
 
     if (avgRms <= minVoice) {
-      return 0;
+      return 20;
     }
 
-    // Tăng điểm khi giọng đủ rõ.
-    let score = (avgRms / targetRms) * 100;
+    let score = 45 + (avgRms / targetRms) * 55;
 
-    // Nếu quá lớn, có thể là hú, noise hoặc mic clipping.
+    // Dễ tính hơn: chỉ phạt nhẹ khi quá to.
     if (avgRms > tooLoudRms) {
-      const penalty = (avgRms - tooLoudRms) * 180;
+      const penalty = (avgRms - tooLoudRms) * 80;
       score -= penalty;
     }
 
@@ -270,29 +268,35 @@ class ScoreEngine {
       return 0;
     }
 
-    const idealVoiceRatio = CONFIG.scoring.idealVoiceRatio || 0.55;
+    const idealVoiceRatio = CONFIG.scoring.idealVoiceRatio || 0.38;
 
-    let score = 100 - Math.abs(voiceRatio - idealVoiceRatio) * 130;
+    // Dễ tính hơn: sai lệch voiceRatio bị trừ ít hơn.
+    let score = 88 - Math.abs(voiceRatio - idealVoiceRatio) * 75;
 
-    // Nếu hát quá ít thì trừ mạnh.
-    if (voiceRatio < 0.18) {
-      score *= voiceRatio / 0.18;
+    // Hát ít vẫn có điểm nếu có giọng rõ.
+    if (voiceRatio < 0.12) {
+      score *= 0.75 + voiceRatio / 0.12 * 0.25;
     }
 
-    // Nếu mic luôn active gần như 100%, có thể là noise hoặc nhạc lọt mic.
-    if (voiceRatio > 0.92) {
-      score -= 15;
+    // Nếu mic luôn active, chỉ trừ nhẹ.
+    if (voiceRatio > 0.94) {
+      score -= 8;
     }
 
     const flickerPenalty = this.calculateFlickerPenalty();
-    score -= flickerPenalty;
+    score -= flickerPenalty * 0.5;
 
     return this.clamp(score, 0, 100);
   }
 
-  calculatePitchScore({ pitchFrames, pitchValidRatio }) {
+  calculatePitchScore({ pitchFrames, pitchValidRatio, voiceRatio }) {
     if (!pitchFrames.length) {
-      return 0;
+      // Dễ tính hơn: nếu có hát nhưng không bắt pitch, vẫn cho điểm vừa phải.
+      if (voiceRatio >= 0.08) {
+        return 58;
+      }
+
+      return 25;
     }
 
     const pitchValues = pitchFrames.map((frame) => frame.pitch);
@@ -300,13 +304,13 @@ class ScoreEngine {
 
     const avgCentsDiff = this.mean(centsDiffs);
 
-    // avgCentsDiff càng thấp thì cao độ càng mượt.
-    // 0-80 cents: tốt, 200+ cents: dao động nhiều.
-    const smoothScore = this.clamp(100 - avgCentsDiff * 0.42, 0, 100);
+    // Dễ tính hơn: pitch dao động vẫn không bị trừ quá mạnh.
+    const smoothScore = this.clamp(100 - avgCentsDiff * 0.22, 35, 100);
 
-    const validScore = this.clamp(pitchValidRatio * 100, 0, 100);
+    // Dễ tính hơn: chỉ cần pitch hợp lệ một phần là có điểm.
+    const validScore = this.clamp(45 + pitchValidRatio * 55, 0, 100);
 
-    const score = validScore * 0.55 + smoothScore * 0.45;
+    const score = validScore * 0.45 + smoothScore * 0.55;
 
     return this.clamp(score, 0, 100);
   }
@@ -319,19 +323,21 @@ class ScoreEngine {
     const rmsValues = voicedFrames.map((frame) => frame.rms);
     const rmsCv = this.coefficientOfVariation(rmsValues);
 
-    const rmsStability = this.clamp(100 - rmsCv * 130, 0, 100);
+    // Dễ tính hơn: RMS không cần quá đều.
+    const rmsStability = this.clamp(100 - rmsCv * 70, 35, 100);
 
     if (pitchFrames.length < 3) {
-      return rmsStability * 0.65;
+      return this.clamp(rmsStability * 0.85, 35, 100);
     }
 
     const pitchValues = pitchFrames.map((frame) => frame.pitch);
     const pitchCentsDiffs = this.calculatePitchCentsDiffs(pitchValues);
     const pitchJitter = this.mean(pitchCentsDiffs);
 
-    const pitchStability = this.clamp(100 - pitchJitter * 0.35, 0, 100);
+    // Dễ tính hơn: pitch jitter bị phạt nhẹ hơn.
+    const pitchStability = this.clamp(100 - pitchJitter * 0.18, 35, 100);
 
-    const score = rmsStability * 0.45 + pitchStability * 0.55;
+    const score = rmsStability * 0.55 + pitchStability * 0.45;
 
     return this.clamp(score, 0, 100);
   }
@@ -351,7 +357,7 @@ class ScoreEngine {
 
     const transitionRatio = transitions / this.frames.length;
 
-    return this.clamp(transitionRatio * 80, 0, 18);
+    return this.clamp(transitionRatio * 45, 0, 10);
   }
 
   calculatePitchCentsDiffs(pitchValues) {
@@ -404,6 +410,7 @@ class ScoreEngine {
       stats[key].averageRms = this.mean(frames.map((frame) => frame.rms));
 
       const pitchFrames = frames.filter((frame) => frame.pitch > 0);
+
       stats[key].averagePitch = this.mean(
         pitchFrames.map((frame) => frame.pitch)
       );

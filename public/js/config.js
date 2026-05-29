@@ -16,21 +16,44 @@ const CONFIG = {
   },
 
   audio: {
-  preferredInputKeyword: "K300",
+    preferredInputKeyword: "K300",
+    mode: "mixed",
 
-  fftSize: 2048,
-  smoothingTimeConstant: 0.82,
+    fftSize: 4096,
+    smoothingTimeConstant: 0.72,
 
-  minRmsForVoice: 0.025, // độ nhạy, tăng nếu mic quá kém, giảm nếu mic quá nhạy
-  silenceTimeoutMs: 700,
+    // Cân bằng: không quá nhạy, không quá điếc
+    minRmsForVoice: 0.02,
 
-  analysisIntervalMs: 33,
+    // Pitch vẫn cần tín hiệu đủ lớn, nhưng không quá cao
+    pitchMinRms: 0.007,
 
-  minPitch: 80,
-  maxPitch: 1000,
+    // Gain vừa phải
+    softwareGain: 1.5,
 
-  calibrationTargetSamples: 90
-},
+    silenceTimeoutMs: 850,
+    analysisIntervalMs: 33,
+
+    minPitch: 70,
+    maxPitch: 900,
+
+    pitchConfidenceThreshold: 0.22,
+
+    // VAD không bắt buộc phải có pitch nữa
+    requirePitchForVoice: false,
+
+    // Cần vài frame liên tiếp mới active
+    voiceStartFrames: 3,
+
+    // Gõ mic thường có crest factor rất cao
+    maxCrestFactor: 18,
+
+    // ZCR để lọc bớt gió/ồn quá bất thường
+    minZeroCrossingRate: 0.01,
+    maxZeroCrossingRate: 0.38,
+
+    calibrationTargetSamples: 90
+  },
 
   stage: {
     cameraFov: 45,
@@ -53,34 +76,43 @@ const CONFIG = {
       },
 
       singer1: {
-        position: { x: -1.25, y: 0, z: 0.65 },
-        rotation: { x: 0, y: 0.25, z: 0 },
-        scale: { x: 1, y: 1, z: 1 }
+        position: { x: -3, y: -1.5, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 0.5, y: 0.5, z: 0.5 }
       },
 
       singer2: {
-        position: { x: 1.25, y: 0, z: 0.65 },
+        position: { x: 3, y: -1.5, z: 0 },
         rotation: { x: 0, y: -0.25, z: 0 },
-        scale: { x: 1, y: 1, z: 1 }
+        scale: { x: 0.5, y: 0.5, z: 0.5 }
       }
     }
   },
 
   scoring: {
-    pitchWeight: 0.4,
-    rhythmWeight: 0.25,
+    // Dễ tính hơn: giảm trọng số pitch, tăng energy
+    pitchWeight: 0.22,
+    rhythmWeight: 0.23,
     stabilityWeight: 0.2,
-    energyWeight: 0.15,
+    energyWeight: 0.35,
 
-    // RMS mục tiêu để xem giọng đủ rõ.
-    targetRms: 0.08,
+    // Mic thường nhỏ, nên hạ target RMS
+    targetRms: 0.045,
 
-    // Nếu RMS vượt mức này nhiều thì có thể là hú/noise/clipping.
-    tooLoudRms: 0.22,
+    // Cho phép mic lớn hơn mới bị xem là quá to
+    tooLoudRms: 0.35,
 
-    // Tỉ lệ thời gian có giọng hát lý tưởng.
-    // Vì có nhạc dạo, nghỉ câu, đoạn chuyển nên không nên là 100%.
-    idealVoiceRatio: 0.55
+    // Karaoke có nhạc dạo/nghỉ câu, nên voiceRatio lý tưởng thấp hơn
+    idealVoiceRatio: 0.38,
+
+    // Điểm cộng thân thiện cho demo
+    friendlyBonus: 8,
+
+    // Chỉ cần hát một ít là có điểm nền
+    minVoiceRatioForBaseScore: 0.04,
+
+    // Điểm nền khi có hát
+    baseScoreWhenSinging: 70
   },
 
   ui: {

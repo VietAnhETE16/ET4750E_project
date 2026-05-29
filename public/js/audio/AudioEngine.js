@@ -13,6 +13,7 @@ class AudioEngine {
     this.analyserNode = null;
 
     this.timeDomainData = null;
+    this.processedTimeDomainData = null;
 
     this.vad = new VoiceActivityDetector();
     this.pitchDetector = new PitchDetector();
@@ -49,7 +50,7 @@ class AudioEngine {
     eventBus.emit("mic:status", {
       enabled: true,
       message: "Mic đang bật",
-      detail: `Thiết bị: ${this.currentDeviceLabel}`
+      detail: `Thiết bị: ${this.currentDeviceLabel} | Nhận diện: Bản cũ RMS/Pitch`
     });
   }
 
@@ -202,6 +203,7 @@ class AudioEngine {
     this.analyserNode.smoothingTimeConstant = CONFIG.audio.smoothingTimeConstant;
 
     this.timeDomainData = new Float32Array(this.analyserNode.fftSize);
+    this.processedTimeDomainData = new Float32Array(this.analyserNode.fftSize);
 
     this.sourceNode.connect(this.analyserNode);
   }
@@ -223,20 +225,56 @@ class AudioEngine {
 
     this.analyserNode.getFloatTimeDomainData(this.timeDomainData);
 
-    const rms = this.calculateRms(this.timeDomainData);
-    const active = this.vad.update(rms);
-    const pitch = this.pitchDetector.detectPitch(
+    this.applySoftwareGain(
       this.timeDomainData,
+      this.processedTimeDomainData
+    );
+
+    const buffer = this.processedTimeDomainData;
+
+    const rms = this.calculateRms(buffer);
+
+    const pitch = this.pitchDetector.detectPitch(
+      buffer,
       this.audioContext.sampleRate
     );
+
+    const pitchConfidence = this.pitchDetector.lastConfidence || 0;
+    const crestFactor = this.calculateCrestFactor(buffer, rms);
+    const zeroCrossingRate = this.calculateZeroCrossingRate(buffer);
+
+    const active = this.vad.update({
+      rms,
+      pitch,
+      pitchConfidence,
+      crestFactor,
+      zeroCrossingRate
+    });
 
     const calibrationResult = this.speakerDetector.processSample({
       active,
       rms,
-      pitch
+      pitch,
+      pitchConfidence,
+      crestFactor,
+      zeroCrossingRate
     });
 
     this.emitCalibrationEvents(calibrationResult);
+
+    if (this.speakerDetector.isCalibrating()) {
+      this.handleCalibrationFrame({
+        active,
+        rms,
+        pitch,
+        pitchConfidence,
+        crestFactor,
+        zeroCrossingRate,
+        calibrationResult
+      });
+
+      return;
+    }
 
     const speaker = this.speakerDetector.classify({
       active,
@@ -244,12 +282,24 @@ class AudioEngine {
       pitch
     });
 
-    this.emitAudioData({
+    eventBus.emit("audio:data", {
+      mode: "mixed",
       active,
       rms,
       pitch,
-      speaker
+      pitchConfidence,
+      crestFactor,
+      zeroCrossingRate,
+      singerId: speaker.singerId,
+      confidence: speaker.confidence,
+      reason: speaker.reason
     });
+
+    if (speaker.reason === "not-enough-profiles") {
+      this.emitSingerInactive("singer1");
+      this.emitSingerInactive("singer2");
+      return;
+    }
 
     this.emitSingerEvents({
       active,
@@ -257,6 +307,66 @@ class AudioEngine {
       pitch,
       speaker
     });
+  }
+
+  handleCalibrationFrame({
+    active,
+    rms,
+    pitch,
+    pitchConfidence,
+    crestFactor,
+    zeroCrossingRate,
+    calibrationResult
+  }) {
+    const calibratingSingerId = this.speakerDetector.getCalibrationSingerId();
+
+    const otherSingerId =
+      calibratingSingerId === "singer1" ? "singer2" : "singer1";
+
+    const acceptedSpeech =
+      calibrationResult?.accepted === true ||
+      calibrationResult?.reason === "accepted" ||
+      calibrationResult?.reason === "completed";
+
+    if (acceptedSpeech && calibratingSingerId) {
+      eventBus.emit("singer:active", {
+        singerId: calibratingSingerId,
+        active: true,
+        rms,
+        pitch,
+        confidence: 1,
+        reason: "calibration"
+      });
+
+      this.emitSingerInactive(otherSingerId);
+    } else {
+      this.emitSingerInactive("singer1");
+      this.emitSingerInactive("singer2");
+    }
+
+    eventBus.emit("audio:data", {
+      mode: "calibration",
+      active,
+      rms,
+      pitch,
+      pitchConfidence,
+      crestFactor,
+      zeroCrossingRate,
+      singerId: calibratingSingerId,
+      confidence: acceptedSpeech ? 1 : 0,
+      accepted: acceptedSpeech,
+      reason: calibrationResult?.reason || "not-speech-like"
+    });
+  }
+
+  applySoftwareGain(input, output) {
+    const gain = CONFIG.audio.softwareGain || 1;
+
+    for (let i = 0; i < input.length; i += 1) {
+      const value = input[i] * gain;
+
+      output[i] = Math.max(-1, Math.min(1, value));
+    }
   }
 
   calculateRms(buffer) {
@@ -269,15 +379,44 @@ class AudioEngine {
     return Math.sqrt(sum / buffer.length);
   }
 
-  emitAudioData({ active, rms, pitch, speaker }) {
-    eventBus.emit("audio:data", {
-      active,
-      rms,
-      pitch,
-      singerId: speaker.singerId,
-      confidence: speaker.confidence,
-      reason: speaker.reason
-    });
+  calculateCrestFactor(buffer, rms) {
+    if (!buffer || !buffer.length || !rms || rms <= 0) {
+      return 0;
+    }
+
+    let peak = 0;
+
+    for (let i = 0; i < buffer.length; i += 1) {
+      const abs = Math.abs(buffer[i]);
+
+      if (abs > peak) {
+        peak = abs;
+      }
+    }
+
+    return peak / rms;
+  }
+
+  calculateZeroCrossingRate(buffer) {
+    if (!buffer || buffer.length < 2) {
+      return 0;
+    }
+
+    let crossings = 0;
+
+    for (let i = 1; i < buffer.length; i += 1) {
+      const previous = buffer[i - 1];
+      const current = buffer[i];
+
+      if (
+        (previous >= 0 && current < 0) ||
+        (previous < 0 && current >= 0)
+      ) {
+        crossings += 1;
+      }
+    }
+
+    return crossings / buffer.length;
   }
 
   emitSingerEvents({ active, rms, pitch, speaker }) {
@@ -289,7 +428,9 @@ class AudioEngine {
     }
 
     const activeSingerId = speaker.singerId;
-    const inactiveSingerId = activeSingerId === "singer1" ? "singer2" : "singer1";
+
+    const inactiveSingerId =
+      activeSingerId === "singer1" ? "singer2" : "singer1";
 
     eventBus.emit("singer:active", {
       singerId: activeSingerId,
@@ -350,6 +491,11 @@ class AudioEngine {
     eventBus.emit("audio:calibration-start", {
       singerId
     });
+
+    eventBus.emit("app:toast", {
+      message: `Bắt đầu calib ${this.getSingerLabel(singerId)}. Hãy nói/hát rõ vào mic.`,
+      type: "info"
+    });
   }
 
   clearSpeakerProfiles() {
@@ -359,6 +505,18 @@ class AudioEngine {
       message: "Đã xóa dữ liệu calibration giọng.",
       type: "info"
     });
+  }
+
+  getSingerLabel(singerId) {
+    if (singerId === "singer1") {
+      return "Ca sĩ 1";
+    }
+
+    if (singerId === "singer2") {
+      return "Ca sĩ 2";
+    }
+
+    return "Ca sĩ";
   }
 }
 

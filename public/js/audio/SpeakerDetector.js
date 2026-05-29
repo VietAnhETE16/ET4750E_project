@@ -34,7 +34,30 @@ class SpeakerDetector {
     this.calibration.samples = [];
   }
 
-  processSample({ active, rms, pitch }) {
+  isCalibrating() {
+    return this.calibration.active;
+  }
+
+  getCalibrationSingerId() {
+    return this.calibration.singerId;
+  }
+
+  hasSingerProfile(singerId) {
+    return Boolean(this.profiles[singerId]);
+  }
+
+  hasBothProfiles() {
+    return Boolean(this.profiles.singer1 && this.profiles.singer2);
+  }
+
+  processSample({
+    active,
+    rms,
+    pitch,
+    pitchConfidence = 0,
+    crestFactor = 0,
+    zeroCrossingRate = 0
+  }) {
     if (!this.calibration.active) {
       return {
         calibrationActive: false,
@@ -43,18 +66,52 @@ class SpeakerDetector {
       };
     }
 
-    if (!active || !pitch || pitch <= 0 || rms < CONFIG.audio.minRmsForVoice) {
+    const minCalibrationRms = CONFIG.audio.minRmsForVoice;
+    const pitchConfidenceThreshold =
+      CONFIG.audio.pitchConfidenceThreshold || 0.22;
+    const maxCrestFactor = CONFIG.audio.maxCrestFactor || 18;
+
+    const minZcr = CONFIG.audio.minZeroCrossingRate ?? 0.01;
+    const maxZcr = CONFIG.audio.maxZeroCrossingRate ?? 0.38;
+
+    const hasValidRms = rms >= minCalibrationRms;
+
+    const hasValidPitch =
+      pitch >= CONFIG.audio.minPitch &&
+      pitch <= CONFIG.audio.maxPitch &&
+      pitchConfidence >= pitchConfidenceThreshold;
+
+    const isImpulseNoise =
+      crestFactor > 0 && crestFactor > maxCrestFactor;
+
+    const zcrLooksOk =
+      zeroCrossingRate === 0 ||
+      (zeroCrossingRate >= minZcr && zeroCrossingRate <= maxZcr);
+
+    // Calibration vẫn cần pitch hợp lệ, vì profile nhận diện đang dựa vào pitchMean/rmsMean.
+    // Nhưng active không còn bị khóa bởi pitch nữa.
+    const isSpeechLike =
+      active &&
+      hasValidRms &&
+      hasValidPitch &&
+      !isImpulseNoise &&
+      zcrLooksOk;
+
+    if (!isSpeechLike) {
       return {
         calibrationActive: true,
         completed: false,
         singerId: this.calibration.singerId,
-        progress: this.getCalibrationProgress()
+        progress: this.getCalibrationProgress(),
+        accepted: false,
+        reason: "not-speech-like"
       };
     }
 
     this.calibration.samples.push({
       pitch,
-      rms
+      rms,
+      pitchConfidence
     });
 
     const progress = this.getCalibrationProgress();
@@ -74,7 +131,9 @@ class SpeakerDetector {
         completed: true,
         singerId: completedSingerId,
         profile,
-        progress: 1
+        progress: 1,
+        accepted: true,
+        reason: "completed"
       };
     }
 
@@ -82,7 +141,9 @@ class SpeakerDetector {
       calibrationActive: true,
       completed: false,
       singerId: this.calibration.singerId,
-      progress
+      progress,
+      accepted: true,
+      reason: "accepted"
     };
   }
 
@@ -95,25 +156,42 @@ class SpeakerDetector {
       };
     }
 
-    const hasSinger1 = Boolean(this.profiles.singer1);
-    const hasSinger2 = Boolean(this.profiles.singer2);
-
-    if (hasSinger1 && hasSinger2) {
-      return this.classifyByProfiles({ rms, pitch });
+    // Quan trọng:
+    // Chưa calibration đủ cả 2 ca sĩ thì KHÔNG nhận diện.
+    if (!this.hasBothProfiles()) {
+      return {
+        singerId: null,
+        confidence: 0,
+        reason: "not-enough-profiles"
+      };
     }
 
-    return this.classifyFallback({ rms, pitch });
+    return this.classifyByProfiles({
+      rms,
+      pitch
+    });
   }
 
   classifyByProfiles({ rms, pitch }) {
-    const d1 = this.calculateDistance(this.profiles.singer1, { rms, pitch });
-    const d2 = this.calculateDistance(this.profiles.singer2, { rms, pitch });
+    const d1 = this.calculateDistance(this.profiles.singer1, {
+      rms,
+      pitch
+    });
+
+    const d2 = this.calculateDistance(this.profiles.singer2, {
+      rms,
+      pitch
+    });
 
     const singerId = d1 <= d2 ? "singer1" : "singer2";
+
     const best = Math.min(d1, d2);
     const worst = Math.max(d1, d2);
 
-    const confidence = worst === 0 ? 1 : Math.min(1, Math.max(0, 1 - best / (worst + 0.0001)));
+    const confidence =
+      worst === 0
+        ? 1
+        : Math.min(1, Math.max(0, 1 - best / (worst + 0.0001)));
 
     return {
       singerId,
@@ -123,16 +201,6 @@ class SpeakerDetector {
         singer1: d1,
         singer2: d2
       }
-    };
-  }
-
-  classifyFallback({ rms, pitch }) {
-    const singerId = pitch < 260 ? "singer1" : "singer2";
-
-    return {
-      singerId,
-      confidence: 0.45,
-      reason: "fallback-pitch"
     };
   }
 
@@ -183,10 +251,6 @@ class SpeakerDetector {
     );
   }
 
-  hasProfiles() {
-    return Boolean(this.profiles.singer1 && this.profiles.singer2);
-  }
-
   getProfiles() {
     return {
       singer1: this.profiles.singer1,
@@ -222,6 +286,8 @@ class SpeakerDetector {
   clearProfiles() {
     this.profiles.singer1 = null;
     this.profiles.singer2 = null;
+
+    this.cancelCalibration();
 
     localStorage.removeItem(this.storageKey);
   }

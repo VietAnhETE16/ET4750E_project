@@ -905,6 +905,22 @@ kbd {
 
 .calibration-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
+}
+
+.danger-small-button {
+  border-color: rgba(251, 113, 133, 0.45);
+  background: rgba(251, 113, 133, 0.12);
+  color: #fecdd3;
+}
+
+.danger-small-button:hover {
+  background: rgba(251, 113, 133, 0.24);
+}
+
+@media (max-width: 720px) {
+  .calibration-buttons {
+    grid-template-columns: 1fr;
+  }
 }

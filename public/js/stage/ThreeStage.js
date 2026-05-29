@@ -146,7 +146,7 @@ class ThreeStage {
     const stagePath = CONFIG.stage.modelPaths.stage;
 
     try {
-      const { root } = await this.modelLoader.loadGLB(stagePath);
+      const { root } = await this.modelLoader.loadModel(stagePath);
 
       this.stageRoot = root;
 
@@ -187,7 +187,7 @@ class ThreeStage {
     let modelData;
 
     try {
-      modelData = await this.modelLoader.loadGLB(path);
+      modelData = await this.modelLoader.loadModel(path);
 
       this.modelLoader.configureModel(modelData.root, {
         castShadow: true,
@@ -206,16 +206,101 @@ class ThreeStage {
       });
     }
 
-    const transform = CONFIG.stage.transforms[id];
+    const transform = CONFIG.stage.transforms?.[id];
 
-    this.modelLoader.applyTransform(modelData.root, transform);
+    if (!transform) {
+      console.error(`[ThreeStage] Không tìm thấy transform cho ${id} trong config.js`);
+      return;
+    }
 
-    this.scene.add(modelData.root);
+    console.log(`[ThreeStage] Transform ${id}:`, transform);
+
+    /*
+      Cấu trúc group:
+
+      avatarAnchor       ← nhận position / rotation / scale từ config.js
+        └── offsetGroup  ← chỉnh lệch thủ công bằng modelOffset
+            └── normalizeGroup ← đưa model về tâm
+                └── modelRoot  ← model .gltf/.glb thật
+    */
+
+    const avatarAnchor = new THREE.Group();
+    avatarAnchor.name = `${id}_anchor_from_config`;
+
+    const offsetGroup = new THREE.Group();
+    offsetGroup.name = `${id}_manual_offset_group`;
+
+    const normalizeGroup = new THREE.Group();
+    normalizeGroup.name = `${id}_auto_normalize_group`;
+
+    // Đây là dòng quan trọng bị thiếu trong file của bạn
+    const modelRoot = modelData.root;
+    modelRoot.name = `${id}_gltf_model_root`;
+
+    normalizeGroup.add(modelRoot);
+    offsetGroup.add(normalizeGroup);
+    avatarAnchor.add(offsetGroup);
+
+    // Tự đưa model về tâm anchor
+    this.normalizeModelToAnchor(modelRoot, normalizeGroup);
+
+    // Apply transform chính từ config.js
+    this.modelLoader.applyTransform(avatarAnchor, transform);
+
+    // Apply offset phụ nếu model bị lệch pivot/origin
+    if (transform.modelOffset) {
+      this.modelLoader.applyTransform(offsetGroup, transform.modelOffset);
+    }
+
+    this.scene.add(avatarAnchor);
 
     this.avatars[id] = new AvatarController({
       id,
-      root: modelData.root,
+
+      // Group cha dùng để chỉnh vị trí bằng config.js
+      root: avatarAnchor,
+
+      // Model thật dùng cho AnimationMixer
+      animationRoot: modelRoot,
+
       animations: modelData.animations
+    });
+  }
+
+  normalizeModelToAnchor(modelRoot, normalizeGroup) {
+    modelRoot.updateMatrixWorld(true);
+
+    const box = new THREE.Box3().setFromObject(modelRoot);
+
+    if (box.isEmpty()) {
+      console.warn("[ThreeStage] Model bounding box rỗng, bỏ qua normalize.");
+      return;
+    }
+
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+
+    box.getCenter(center);
+    box.getSize(size);
+
+    normalizeGroup.position.set(
+      -center.x,
+      -box.min.y,
+      -center.z
+    );
+
+    console.log("[ThreeStage] Normalized model:", {
+      center: {
+        x: center.x,
+        y: center.y,
+        z: center.z
+      },
+      size: {
+        x: size.x,
+        y: size.y,
+        z: size.z
+      },
+      minY: box.min.y
     });
   }
 

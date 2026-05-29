@@ -62,7 +62,6 @@ class KaraokeApp {
     eventBus.emit("mic:status", {
       enabled: false,
       message: "Mic chưa bật",
-      detail: "Phần xử lý micro sẽ được thêm ở Phần 4."
     });
 
     try {
@@ -105,6 +104,10 @@ class KaraokeApp {
 
     eventBus.on("ui:calibrate-singer", ({ singerId }) => {
       this.handleCalibrateSinger(singerId);
+    });
+
+    eventBus.on("ui:clear-calibration", () => {
+      this.handleClearCalibration();
     });
 
     eventBus.on("audio:data", (payload) => {
@@ -508,6 +511,41 @@ class KaraokeApp {
 
       eventBus.emit("app:toast", {
         message: error.message || "Không thể calibration giọng.",
+        type: "error"
+      });
+    }
+  }
+
+  handleClearCalibration() {
+    try {
+      this.audioEngine.clearSpeakerProfiles();
+
+      eventBus.emit("audio:calibration-cleared");
+
+      eventBus.emit("app:toast", {
+        message: "Đã xóa dữ liệu calibration cũ.",
+        type: "success"
+      });
+
+      // Tắt phản ứng avatar ngay sau khi xóa calib
+      eventBus.emit("singer:active", {
+        singerId: "singer1",
+        active: false,
+        rms: 0,
+        pitch: 0
+      });
+
+      eventBus.emit("singer:active", {
+        singerId: "singer2",
+        active: false,
+        rms: 0,
+        pitch: 0
+      });
+    } catch (error) {
+      console.error("[KaraokeApp] Không xóa được calibration:", error);
+
+      eventBus.emit("app:toast", {
+        message: "Không xóa được dữ liệu calibration.",
         type: "error"
       });
     }
