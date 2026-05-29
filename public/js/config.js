@@ -22,13 +22,7 @@ const CONFIG = {
     fftSize: 4096,
     smoothingTimeConstant: 0.72,
 
-    // Cân bằng: không quá nhạy, không quá điếc
-    minRmsForVoice: 0.02,
-
-    // Pitch vẫn cần tín hiệu đủ lớn, nhưng không quá cao
-    pitchMinRms: 0.007,
-
-    // Gain vừa phải
+    minRmsForVoice: 0.014,
     softwareGain: 1.5,
 
     silenceTimeoutMs: 850,
@@ -37,22 +31,35 @@ const CONFIG = {
     minPitch: 70,
     maxPitch: 900,
 
+    pitchMinRms: 0.007,
     pitchConfidenceThreshold: 0.22,
 
-    // VAD không bắt buộc phải có pitch nữa
-    requirePitchForVoice: false,
-
-    // Cần vài frame liên tiếp mới active
     voiceStartFrames: 3,
-
-    // Gõ mic thường có crest factor rất cao
     maxCrestFactor: 18,
-
-    // ZCR để lọc bớt gió/ồn quá bất thường
     minZeroCrossingRate: 0.01,
     maxZeroCrossingRate: 0.38,
 
     calibrationTargetSamples: 90
+  },
+
+  mfcc: {
+    enabled: true,
+
+    coefficientCount: 13,
+    filterCount: 26,
+    fftSize: 2048,
+    minFreq: 80,
+    maxFreq: 7600,
+    preEmphasis: 0.97,
+
+    calibrationTargetSamples: 100,
+    sampleEveryMs: 80,
+
+    c0Weight: 0.35,
+    stdFloor: 3.5,
+    decisionMargin: 0.08,
+    smoothingFrames: 4,
+    maxDistance: 9.5
   },
 
   stage: {

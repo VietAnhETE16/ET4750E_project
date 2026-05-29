@@ -16,14 +16,13 @@ class VoiceActivityDetector {
   update(input) {
     const now = performance.now();
 
-    const data =
-      typeof input === "number"
-        ? {
-            rms: input,
-            crestFactor: 0,
-            zeroCrossingRate: 0
-          }
-        : input || {};
+    const data = typeof input === "number"
+      ? {
+          rms: input,
+          crestFactor: 0,
+          zeroCrossingRate: 0
+        }
+      : input || {};
 
     const rms = Number(data.rms || 0);
     const crestFactor = Number(data.crestFactor || 0);
@@ -33,18 +32,13 @@ class VoiceActivityDetector {
     const maxZcr = CONFIG.audio.maxZeroCrossingRate ?? 0.38;
 
     const hasEnoughRms = rms >= this.minRms;
-
-    const isImpulseNoise =
-      crestFactor > 0 && crestFactor > this.maxCrestFactor;
+    const isImpulseNoise = crestFactor > 0 && crestFactor > this.maxCrestFactor;
 
     const zcrLooksOk =
       zeroCrossingRate === 0 ||
       (zeroCrossingRate >= minZcr && zeroCrossingRate <= maxZcr);
 
-    const isVoiceCandidate =
-      hasEnoughRms &&
-      !isImpulseNoise &&
-      zcrLooksOk;
+    const isVoiceCandidate = hasEnoughRms && !isImpulseNoise && zcrLooksOk;
 
     if (isVoiceCandidate) {
       this.voiceFrameCount += 1;

@@ -4,6 +4,7 @@ import eventBus from "../EventBus.js";
 import VoiceActivityDetector from "./VoiceActivityDetector.js";
 import PitchDetector from "./PitchDetector.js";
 import SpeakerDetector from "./SpeakerDetector.js";
+import MFCCExtractor from "./MFCCExtractor.js";
 
 class AudioEngine {
   constructor() {
@@ -17,6 +18,7 @@ class AudioEngine {
 
     this.vad = new VoiceActivityDetector();
     this.pitchDetector = new PitchDetector();
+    this.mfccExtractor = new MFCCExtractor();
     this.speakerDetector = new SpeakerDetector();
 
     this.analysisTimer = null;
@@ -50,7 +52,7 @@ class AudioEngine {
     eventBus.emit("mic:status", {
       enabled: true,
       message: "Mic đang bật",
-      detail: `Thiết bị: ${this.currentDeviceLabel} | Nhận diện: Bản cũ RMS/Pitch`
+      detail: `Thiết bị: ${this.currentDeviceLabel} | Nhận diện: MFCC Profile`
     });
   }
 
@@ -233,29 +235,37 @@ class AudioEngine {
     const buffer = this.processedTimeDomainData;
 
     const rms = this.calculateRms(buffer);
+    const crestFactor = this.calculateCrestFactor(buffer, rms);
+    const zeroCrossingRate = this.calculateZeroCrossingRate(buffer);
 
+    const active = this.vad.update({
+      rms,
+      crestFactor,
+      zeroCrossingRate
+    });
+
+    // Pitch vẫn được tính để chấm điểm/debug nếu project của bạn đang dùng,
+    // nhưng KHÔNG được truyền vào SpeakerDetector để phân biệt người hát.
     const pitch = this.pitchDetector.detectPitch(
       buffer,
       this.audioContext.sampleRate
     );
 
     const pitchConfidence = this.pitchDetector.lastConfidence || 0;
-    const crestFactor = this.calculateCrestFactor(buffer, rms);
-    const zeroCrossingRate = this.calculateZeroCrossingRate(buffer);
 
-    const active = this.vad.update({
+    const mfcc = this.shouldExtractMfcc({
+      active,
       rms,
-      pitch,
-      pitchConfidence,
       crestFactor,
       zeroCrossingRate
-    });
+    })
+      ? this.mfccExtractor.extract(buffer, this.audioContext.sampleRate)
+      : null;
 
     const calibrationResult = this.speakerDetector.processSample({
       active,
       rms,
-      pitch,
-      pitchConfidence,
+      mfcc,
       crestFactor,
       zeroCrossingRate
     });
@@ -270,6 +280,7 @@ class AudioEngine {
         pitchConfidence,
         crestFactor,
         zeroCrossingRate,
+        mfcc,
         calibrationResult
       });
 
@@ -279,23 +290,30 @@ class AudioEngine {
     const speaker = this.speakerDetector.classify({
       active,
       rms,
-      pitch
+      mfcc,
+      crestFactor,
+      zeroCrossingRate
     });
 
     eventBus.emit("audio:data", {
-      mode: "mixed",
+      mode: "mfcc",
       active,
       rms,
       pitch,
       pitchConfidence,
       crestFactor,
       zeroCrossingRate,
+      mfccReady: Boolean(mfcc),
       singerId: speaker.singerId,
       confidence: speaker.confidence,
-      reason: speaker.reason
+      reason: speaker.reason,
+      distances: speaker.distances || null
     });
 
-    if (speaker.reason === "not-enough-profiles") {
+    if (
+      !speaker.singerId ||
+      ["not-enough-profiles", "no-voice", "no-mfcc", "low-rms", "impulse-noise", "zcr-noise", "too-far-from-profiles"].includes(speaker.reason)
+    ) {
       this.emitSingerInactive("singer1");
       this.emitSingerInactive("singer2");
       return;
@@ -309,6 +327,34 @@ class AudioEngine {
     });
   }
 
+  shouldExtractMfcc({ active, rms, crestFactor, zeroCrossingRate }) {
+    const minRms = CONFIG.audio.minRmsForVoice;
+    const maxCrestFactor = CONFIG.audio.maxCrestFactor || 18;
+    const minZcr = CONFIG.audio.minZeroCrossingRate ?? 0.01;
+    const maxZcr = CONFIG.audio.maxZeroCrossingRate ?? 0.38;
+
+    if (!active) {
+      return false;
+    }
+
+    if (rms < minRms) {
+      return false;
+    }
+
+    if (crestFactor > 0 && crestFactor > maxCrestFactor) {
+      return false;
+    }
+
+    if (
+      zeroCrossingRate > 0 &&
+      (zeroCrossingRate < minZcr || zeroCrossingRate > maxZcr)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
   handleCalibrationFrame({
     active,
     rms,
@@ -316,6 +362,7 @@ class AudioEngine {
     pitchConfidence,
     crestFactor,
     zeroCrossingRate,
+    mfcc,
     calibrationResult
   }) {
     const calibratingSingerId = this.speakerDetector.getCalibrationSingerId();
@@ -345,13 +392,14 @@ class AudioEngine {
     }
 
     eventBus.emit("audio:data", {
-      mode: "calibration",
+      mode: "mfcc-calibration",
       active,
       rms,
       pitch,
       pitchConfidence,
       crestFactor,
       zeroCrossingRate,
+      mfccReady: Boolean(mfcc),
       singerId: calibratingSingerId,
       confidence: acceptedSpeech ? 1 : 0,
       accepted: acceptedSpeech,
@@ -493,7 +541,7 @@ class AudioEngine {
     });
 
     eventBus.emit("app:toast", {
-      message: `Bắt đầu calib ${this.getSingerLabel(singerId)}. Hãy nói/hát rõ vào mic.`,
+      message: `Bắt đầu calib ${this.getSingerLabel(singerId)} bằng MFCC. Hãy nói/hát rõ vào mic.`,
       type: "info"
     });
   }
@@ -502,7 +550,7 @@ class AudioEngine {
     this.speakerDetector.clearProfiles();
 
     eventBus.emit("app:toast", {
-      message: "Đã xóa dữ liệu calibration giọng.",
+      message: "Đã xóa dữ liệu calibration MFCC.",
       type: "info"
     });
   }
