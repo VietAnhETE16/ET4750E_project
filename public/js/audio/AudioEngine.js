@@ -244,7 +244,7 @@ class AudioEngine {
       zeroCrossingRate
     });
 
-    // Pitch vẫn được tính để chấm điểm/debug nếu project của bạn đang dùng,
+    // Pitch vẫn được tính để chấm điểm/debug,
     // nhưng KHÔNG được truyền vào SpeakerDetector để phân biệt người hát.
     const pitch = this.pitchDetector.detectPitch(
       buffer,
