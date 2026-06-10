@@ -83,15 +83,15 @@ const CONFIG = {
       },
 
       singer1: {
-        position: { x: -3, y: -1.5, z: 0 },
+        position: { x: -2.75, y: -1.5, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
-        scale: { x: 0.5, y: 0.5, z: 0.5 }
+        scale: { x: 0.75, y: 0.75, z: 0.75 }
       },
 
       singer2: {
-        position: { x: 3, y: -1.5, z: 0 },
+        position: { x: 2.75, y: -1.5, z: 0 },
         rotation: { x: 0, y: -0.25, z: 0 },
-        scale: { x: 0.5, y: 0.5, z: 0.5 }
+        scale: { x: 0.75, y: 0.75, z: 0.75 }
       }
     }
   },
