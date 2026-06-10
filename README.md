@@ -1,6 +1,6 @@
 # 🎤 Karaoke 3D Online
 
-Hệ thống karaoke trực tuyến chạy hoàn toàn trên trình duyệt, tích hợp sân khấu 3D với avatar ca sĩ phản ứng theo giọng hát thời gian thực, phát video YouTube và chấm điểm tự động.
+Hệ thống karaoke trực tuyến tích hợp sân khấu 3D với avatar ca sĩ phản ứng theo giọng hát thời gian thực, phát video YouTube và chấm điểm tự động. Chạy trên Node.js (Express) với frontend Vanilla JS thuần.
 
 ---
 
@@ -11,6 +11,7 @@ Hệ thống karaoke trực tuyến chạy hoàn toàn trên trình duyệt, tí
 - [Cấu trúc project](#cấu-trúc-project)
 - [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
 - [Hướng dẫn chạy](#hướng-dẫn-chạy)
+- [Biến môi trường](#biến-môi-trường)
 - [Cấu hình](#cấu-hình)
 - [Phím tắt](#phím-tắt)
 - [Cơ chế chấm điểm](#cơ-chế-chấm-điểm)
@@ -32,6 +33,7 @@ Hệ thống karaoke trực tuyến chạy hoàn toàn trên trình duyệt, tí
 
 | Thành phần | Công nghệ |
 |---|---|
+| Backend | Node.js + Express |
 | Frontend | HTML5, CSS3, Vanilla JavaScript (ES Modules) |
 | 3D Rendering | [Three.js](https://threejs.org/) v0.160.0 |
 | Audio Processing | Web Audio API |
@@ -39,47 +41,51 @@ Hệ thống karaoke trực tuyến chạy hoàn toàn trên trình duyệt, tí
 | 3D Models | GLTF/GLB format |
 | Kiến trúc | Event-driven (EventBus pattern) |
 
-> **Không sử dụng framework** — toàn bộ viết bằng Vanilla JS thuần, không có bước build.
+> **Không sử dụng framework frontend** — toàn bộ client-side viết bằng Vanilla JS thuần, không có bước build.
 
 ---
 
 ## 📁 Cấu trúc project
 
 ```
-public/
-├── index.html                    # Entry point, định nghĩa importmap cho Three.js
-├── css/
-│   └── style.css                 # Toàn bộ stylesheet (layers, panel, modal, toast...)
-├── assets/
-│   └── models/
-│       ├── stage.glb             # Model sân khấu (fallback)
-│       ├── stage1.glb            # Model sân khấu chính (~10MB)
-│       ├── singer1.glb           # Avatar Ca sĩ 1
-│       └── singer2.glb           # Avatar Ca sĩ 2
-└── js/
-    ├── config.js                 # Cấu hình toàn cục (audio, stage, scoring, UI)
-    ├── main.js                   # Điểm khởi động ứng dụng (KaraokeApp)
-    ├── EventBus.js               # Pub/Sub event system
-    ├── audio/
-    │   ├── AudioEngine.js        # Quản lý microphone, Web Audio API, vòng lặp phân tích
-    │   ├── PitchDetector.js      # Phát hiện cao độ bằng autocorrelation
-    │   ├── SpeakerDetector.js    # Nhận diện và calibration giọng 2 ca sĩ
-    │   └── VoiceActivityDetector.js  # Phát hiện khi nào có giọng hát (VAD)
-    ├── score/
-    │   └── ScoreEngine.js        # Thu thập và tính điểm cuối bài
-    ├── stage/
-    │   ├── ThreeStage.js         # Khởi tạo scene Three.js, camera, ánh sáng, load model
-    │   ├── AvatarController.js   # Điều khiển animation và chuyển động avatar theo giọng hát
-    │   └── ModelLoader.js        # Load file .glb, tạo fallback geometry
-    ├── ui/
-    │   ├── ControlPanel.js       # Render và xử lý toàn bộ panel điều khiển
-    │   ├── KeyboardShortcut.js   # Đăng ký phím tắt
-    │   └── SfxManager.js        # Quản lý hiệu ứng âm thanh UI
-    └── youtube/
-        ├── YoutubePlayer.js      # Wrapper YouTube IFrame API
-        ├── YoutubeSearch.js      # Gọi API tìm kiếm video (/api/youtube/search)
-        ├── SuggestService.js     # Gợi ý từ khóa tìm kiếm
-        └── VideoQueue.js         # Quản lý hàng chờ bài hát
+├── server.js                     # Express server: serve static files + API proxy YouTube
+├── .env                          # Biến môi trường (YOUTUBE_API_KEY, PORT) — KHÔNG commit
+├── .env.example                  # Template mẫu cho .env
+├── package.json
+└── public/
+    ├── index.html                    # Entry point, định nghĩa importmap cho Three.js
+    ├── css/
+    │   └── style.css                 # Toàn bộ stylesheet (layers, panel, modal, toast...)
+    ├── assets/
+    │   └── models/
+    │       ├── stage.glb             # Model sân khấu (fallback)
+    │       ├── stage1.glb            # Model sân khấu chính (~10MB)
+    │       ├── singer1.glb           # Avatar Ca sĩ 1
+    │       └── singer2.glb           # Avatar Ca sĩ 2
+    └── js/
+        ├── config.js                 # Cấu hình toàn cục (audio, stage, scoring, UI)
+        ├── main.js                   # Điểm khởi động ứng dụng (KaraokeApp)
+        ├── EventBus.js               # Pub/Sub event system
+        ├── audio/
+        │   ├── AudioEngine.js        # Quản lý microphone, Web Audio API, vòng lặp phân tích
+        │   ├── PitchDetector.js      # Phát hiện cao độ bằng autocorrelation
+        │   ├── SpeakerDetector.js    # Nhận diện và calibration giọng 2 ca sĩ
+        │   └── VoiceActivityDetector.js  # Phát hiện khi nào có giọng hát (VAD)
+        ├── score/
+        │   └── ScoreEngine.js        # Thu thập và tính điểm cuối bài
+        ├── stage/
+        │   ├── ThreeStage.js         # Khởi tạo scene Three.js, camera, ánh sáng, load model
+        │   ├── AvatarController.js   # Điều khiển animation và chuyển động avatar theo giọng hát
+        │   └── ModelLoader.js        # Load file .glb, tạo fallback geometry
+        ├── ui/
+        │   ├── ControlPanel.js       # Render và xử lý toàn bộ panel điều khiển
+        │   ├── KeyboardShortcut.js   # Đăng ký phím tắt
+        │   └── SfxManager.js        # Quản lý hiệu ứng âm thanh UI
+        └── youtube/
+            ├── YoutubePlayer.js      # Wrapper YouTube IFrame API
+            ├── YoutubeSearch.js      # Gọi API tìm kiếm video (/api/youtube/search)
+            ├── SuggestService.js     # Gợi ý từ khóa tìm kiếm
+            └── VideoQueue.js         # Quản lý hàng chờ bài hát
 ```
 
 ---
@@ -123,30 +129,68 @@ Project sử dụng **kiến trúc hướng sự kiện** — tất cả các mo
 
 ## 🚀 Hướng dẫn chạy
 
-Project là **pure frontend** — chỉ cần một static file server. Không có bước build hay cài npm.
-
 ### Yêu cầu
 
+- **Node.js** v18 trở lên
+- **YouTube Data API v3 key** (xem hướng dẫn bên dưới)
 - Trình duyệt hiện đại hỗ trợ ES Modules (Chrome 89+, Firefox 88+, Edge 89+)
 - Microphone (để dùng tính năng hát & chấm điểm)
-- **Backend API** tại `/api/youtube/search` để tìm kiếm video (cần YouTube Data API v3 key)
 
-### Chạy local
+### 1. Cài dependencies
 
 ```bash
-# Dùng Python
-python3 -m http.server 3000
-
-# Hoặc Node.js (npx)
-npx serve public
-
-# Hoặc VS Code Live Server
-# → Chuột phải index.html → Open with Live Server
+npm install
 ```
 
-Truy cập: `http://localhost:3000`
+### 2. Tạo file `.env`
 
-> **Lưu ý:** Tính năng microphone yêu cầu HTTPS hoặc `localhost`. Nếu mở trực tiếp file HTML (`file://`), Web Audio API sẽ không hoạt động.
+Tạo file `.env` ở thư mục gốc (cùng cấp với `server.js`):
+
+```env
+YOUTUBE_API_KEY=your_youtube_api_key_here
+PORT=5500
+```
+
+> Xem chi tiết cách lấy API key tại mục [Biến môi trường](#biến-môi-trường).
+
+### 3. Chạy server
+
+```bash
+node server.js
+```
+
+Truy cập: `http://localhost:5500`
+
+> **Lưu ý:** Tính năng microphone yêu cầu HTTPS hoặc `localhost`. Không mở file HTML trực tiếp qua `file://` — Web Audio API sẽ không hoạt động.
+
+---
+
+## 🔑 Biến môi trường
+
+| Biến | Bắt buộc | Mô tả |
+|---|---|---|
+| `YOUTUBE_API_KEY` | ✅ | API key YouTube Data API v3 |
+| `PORT` | Không | Port server (mặc định: `5500`) |
+
+### Cách lấy YouTube Data API v3 Key
+
+1. Truy cập [Google Cloud Console](https://console.cloud.google.com/)
+2. Tạo project mới hoặc chọn project có sẵn
+3. Vào **APIs & Services → Library**, tìm và bật **YouTube Data API v3**
+4. Vào **APIs & Services → Credentials**, chọn **Create Credentials → API Key**
+5. Sao chép key và dán vào file `.env`
+
+> **Lưu ý bảo mật:** Không commit file `.env` lên Git. Thêm `.env` vào `.gitignore`.
+
+### API endpoint
+
+`server.js` chỉ expose một endpoint duy nhất để proxy tìm kiếm YouTube:
+
+```
+GET /api/youtube/search?q=<từ khóa>
+```
+
+Server tự động thêm từ khóa `karaoke` vào query nếu từ khóa chưa có. Kết quả trả về tối đa 8 video, lọc `videoEmbeddable=true`, ưu tiên nội dung tiếng Việt (`regionCode=VN`).
 
 ---
 
