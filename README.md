@@ -20,10 +20,11 @@ Hệ thống karaoke trực tuyến tích hợp sân khấu 3D với avatar ca s
 
 ## ✨ Tính năng
 
-- **Sân khấu 3D**: Render sân khấu và 2 avatar ca sĩ bằng Three.js với model `.glb`, có animation phản ứng theo giọng hát.
+- **Sân khấu 3D**: Render sân khấu và 2 avatar ca sĩ bằng Three.js với model `.glb`, có animation phản ứng theo giọng hát thời gian thực.
 - **Tích hợp YouTube**: Tìm kiếm, phát video karaoke YouTube qua IFrame API + YouTube Data API v3.
 - **Hàng chờ nhạc**: Thêm bài vào queue, tự động phát bài tiếp theo sau khi kết thúc.
-- **Nhận diện giọng hát**: Phân biệt 2 ca sĩ riêng biệt qua microphone, sử dụng kỹ thuật calibration voice profile (pitch + RMS).
+- **Nhận diện giọng hát bằng MFCC**: Phân biệt 2 ca sĩ qua microphone sử dụng Mel-Frequency Cepstral Coefficients — trích xuất đặc trưng giọng nói chính xác hơn so với pitch/RMS đơn thuần.
+- **Lọc nhiễu thông minh**: Kết hợp VAD (Voice Activity Detection), Crest Factor và Zero-Crossing Rate để loại bỏ âm thanh không phải giọng người trước khi phân loại.
 - **Chấm điểm tự động**: Tính điểm cuối bài dựa trên 4 tiêu chí: cao độ, nhịp điệu, năng lượng và ổn định giọng.
 - **Giao diện responsive**: Panel điều khiển có thể thu gọn/mở rộng, hỗ trợ phím tắt bàn phím.
 
@@ -36,12 +37,13 @@ Hệ thống karaoke trực tuyến tích hợp sân khấu 3D với avatar ca s
 | Backend | Node.js + Express |
 | Frontend | HTML5, CSS3, Vanilla JavaScript (ES Modules) |
 | 3D Rendering | [Three.js](https://threejs.org/) v0.160.0 |
-| Audio Processing | Web Audio API |
+| Audio Processing | Web Audio API + MFCC (tự implement) |
+| Nhận diện giọng | MFCC + Weighted Euclidean Distance + Decision Smoothing |
 | Video | YouTube IFrame API + YouTube Data API v3 |
 | 3D Models | GLTF/GLB format |
 | Kiến trúc | Event-driven (EventBus pattern) |
 
-> **Không sử dụng framework frontend** — toàn bộ client-side viết bằng Vanilla JS thuần, không có bước build.
+> **Không sử dụng framework frontend** — toàn bộ client-side viết bằng Vanilla JS thuần, không có bước build. Thuật toán MFCC được implement từ đầu, không dùng thư viện ngoài.
 
 ---
 
@@ -63,16 +65,17 @@ Hệ thống karaoke trực tuyến tích hợp sân khấu 3D với avatar ca s
     │       ├── singer1.glb           # Avatar Ca sĩ 1
     │       └── singer2.glb           # Avatar Ca sĩ 2
     └── js/
-        ├── config.js                 # Cấu hình toàn cục (audio, stage, scoring, UI)
+        ├── config.js                 # Cấu hình toàn cục (audio, mfcc, stage, scoring, UI)
         ├── main.js                   # Điểm khởi động ứng dụng (KaraokeApp)
         ├── EventBus.js               # Pub/Sub event system
         ├── audio/
-        │   ├── AudioEngine.js        # Quản lý microphone, Web Audio API, vòng lặp phân tích
-        │   ├── PitchDetector.js      # Phát hiện cao độ bằng autocorrelation
-        │   ├── SpeakerDetector.js    # Nhận diện và calibration giọng 2 ca sĩ
-        │   └── VoiceActivityDetector.js  # Phát hiện khi nào có giọng hát (VAD)
+        │   ├── AudioEngine.js        # Quản lý microphone, vòng phân tích ~30fps, điều phối MFCC
+        │   ├── MFCCExtractor.js      # Trích xuất 13 MFCC coefficients (FFT → Mel filterbank → DCT)
+        │   ├── SpeakerDetector.js    # Nhận diện ca sĩ bằng MFCC profile + decision smoothing
+        │   ├── PitchDetector.js      # Phát hiện cao độ bằng autocorrelation (dùng cho chấm điểm)
+        │   └── VoiceActivityDetector.js  # VAD kết hợp RMS + Crest Factor + Zero-Crossing Rate
         ├── score/
-        │   └── ScoreEngine.js        # Thu thập và tính điểm cuối bài
+        │   └── ScoreEngine.js        # Thu thập audio frame ngầm, tính điểm cuối bài
         ├── stage/
         │   ├── ThreeStage.js         # Khởi tạo scene Three.js, camera, ánh sáng, load model
         │   ├── AvatarController.js   # Điều khiển animation và chuyển động avatar theo giọng hát
@@ -92,7 +95,7 @@ Hệ thống karaoke trực tuyến tích hợp sân khấu 3D với avatar ca s
 
 ## 🏗 Kiến trúc hệ thống
 
-Project sử dụng **kiến trúc hướng sự kiện** — tất cả các module giao tiếp với nhau qua `EventBus` (singleton pub/sub), không phụ thuộc trực tiếp lẫn nhau. `KaraokeApp` (`main.js`) đóng vai trò điều phối trung tâm.
+Project sử dụng **kiến trúc hướng sự kiện** — tất cả các module giao tiếp qua `EventBus` (singleton pub/sub), không phụ thuộc trực tiếp lẫn nhau. `KaraokeApp` (`main.js`) đóng vai trò điều phối trung tâm.
 
 ```
                         ┌─────────────────┐
@@ -107,15 +110,16 @@ Project sử dụng **kiến trúc hướng sự kiện** — tất cả các mo
    │  Layer      │       │    Layer     │      │    Layer     │
    │             │       │              │      │              │
    │ YoutubePlayer│      │ AudioEngine  │      │ ThreeStage   │
-   │ YoutubeSearch│      │ PitchDetector│      │ AvatarCtrl   │
+   │ YoutubeSearch│      │ MFCCExtractor│      │ AvatarCtrl   │
    │ VideoQueue  │       │ SpeakerDetect│      │ ModelLoader  │
-   │ SuggestSvc  │       │ VADetector   │      └──────────────┘
-   └─────────────┘       └──────────────┘
-                                 │
-                        ┌────────▼────────┐
-                        │  ScoreEngine    │
-                        │  (chấm điểm)   │
-                        └─────────────────┘
+   │ SuggestSvc  │       │ PitchDetector│      └──────────────┘
+   └─────────────┘       │ VADetector   │
+                         └──────┬───────┘
+                                │
+                       ┌────────▼────────┐
+                       │  ScoreEngine    │
+                       │  (chấm điểm)   │
+                       └─────────────────┘
 ```
 
 **Các luồng sự kiện chính:**
@@ -202,12 +206,35 @@ Toàn bộ cấu hình tập trung trong `js/config.js`:
 
 ```js
 audio: {
-  preferredInputKeyword: "K300",    // Ưu tiên soundcard có tên chứa "K300"
-  fftSize: 2048,                    // Độ phân giải FFT
-  minRmsForVoice: 0.008,            // Ngưỡng nhạy mic (tăng nếu mic kém)
-  silenceTimeoutMs: 700,            // Thời gian im lặng trước khi tắt VAD
-  analysisIntervalMs: 33,           // ~30fps phân tích audio
-  calibrationTargetSamples: 90      // Số mẫu cần để hoàn tất calibration
+  preferredInputKeyword: "K300",  // Ưu tiên soundcard có tên chứa "K300"
+  fftSize: 4096,                  // Độ phân giải FFT cho AnalyserNode
+  softwareGain: 1.5,              // Khuếch đại phần mềm trước khi xử lý
+  minRmsForVoice: 0.014,          // Ngưỡng nhạy mic
+  silenceTimeoutMs: 850,          // Thời gian im lặng trước khi tắt VAD
+  maxCrestFactor: 18,             // Ngưỡng lọc tiếng động xung (vỗ tay, tiếng gõ)
+  minZeroCrossingRate: 0.01,      // Ngưỡng ZCR tối thiểu — lọc DC offset / tiếng ù
+  maxZeroCrossingRate: 0.38,      // Ngưỡng ZCR tối đa — lọc tiếng sizzle / nhiễu cao tần
+  voiceStartFrames: 3             // Số frame liên tiếp cần thiết để xác nhận có giọng
+}
+```
+
+### MFCC
+
+```js
+mfcc: {
+  coefficientCount: 13,           // Số hệ số MFCC trích xuất
+  filterCount: 26,                // Số bộ lọc trong Mel filterbank
+  fftSize: 2048,                  // Kích thước FFT riêng cho MFCC
+  minFreq: 80,                    // Tần số thấp nhất của filterbank (Hz)
+  maxFreq: 7600,                  // Tần số cao nhất của filterbank (Hz)
+  preEmphasis: 0.97,              // Hệ số pre-emphasis lọc tần số cao
+  calibrationTargetSamples: 100, // Số mẫu cần để hoàn tất calibration
+  sampleEveryMs: 80,              // Throttle: chỉ lấy 1 mẫu mỗi 80ms
+  c0Weight: 0.35,                 // Trọng số riêng cho hệ số C0 (năng lượng tổng)
+  stdFloor: 3.5,                  // Giá trị tối thiểu của std (tránh chia cho 0)
+  decisionMargin: 0.08,           // Biên độ tối thiểu để quyết định đổi ca sĩ
+  smoothingFrames: 4,             // Số frame liên tiếp cần cùng kết quả để xác nhận
+  maxDistance: 9.5                // Khoảng cách MFCC tối đa — từ chối nếu quá xa profile
 }
 ```
 
@@ -221,8 +248,8 @@ stage: {
     singer2: "./assets/models/singer2.glb"
   },
   transforms: {
-    singer1: { position: { x: -3, y: -1.5, z: 0 }, scale: { x: 0.5, ... } },
-    singer2: { position: { x:  3, y: -1.5, z: 0 }, scale: { x: 0.5, ... } }
+    singer1: { position: { x: -2.75, y: -1.5, z: 0 }, scale: { x: 0.75, ... } },
+    singer2: { position: { x:  2.75, y: -1.5, z: 0 }, scale: { x: 0.75, ... } }
   }
 }
 ```
@@ -271,7 +298,10 @@ scoring: {
 
 ## 📝 Ghi chú kỹ thuật
 
-- **Nhận diện 2 ca sĩ**: `SpeakerDetector` dùng khoảng cách Euclidean trên không gian `(log pitch, RMS)` so với voice profile đã calibrate để phân biệt giọng Singer 1 và Singer 2. Profile được lưu vào `localStorage`.
-- **Fallback model**: Nếu file `.glb` không load được, hệ thống tự tạo geometry đơn giản (hình trụ cho avatar, mặt phẳng cho sân khấu) để UI không bị vỡ.
+- **MFCC tự implement**: Toàn bộ pipeline MFCC (pre-emphasis → Hamming window → FFT → Mel filterbank → log → DCT) được viết thuần JS trong `MFCCExtractor.js`, không phụ thuộc thư viện ngoài.
+- **Nhận diện 2 ca sĩ**: `SpeakerDetector` dùng Weighted Euclidean Distance trên không gian 13 chiều MFCC, chuẩn hóa theo độ lệch chuẩn từng hệ số. Hệ số C0 có trọng số thấp hơn (0.35) vì phụ thuộc nhiều vào âm lượng mic. Decision smoothing yêu cầu 4 frame liên tiếp cùng kết quả trước khi chuyển ca sĩ, tránh nhảy loạn.
+- **Lọc nhiễu 3 lớp**: VAD kết hợp RMS (ngưỡng âm lượng) + Crest Factor (lọc tiếng xung như vỗ tay) + Zero-Crossing Rate (lọc tiếng ù và nhiễu tần số cao) trước khi cho vào MFCC và classifier.
+- **Pitch chỉ dùng cho chấm điểm**: Pitch (autocorrelation) không còn được dùng để phân biệt ca sĩ — chỉ phục vụ `ScoreEngine`. Việc nhận diện hoàn toàn dựa trên MFCC profile.
+- **Fallback model**: Nếu file `.glb` không load được, hệ thống tự tạo geometry đơn giản để UI không bị vỡ.
 - **Root motion lock**: `AvatarController` khóa lại transform gốc của `animationRoot` sau mỗi frame để tránh model bị trôi do root motion trong animation clip.
-- **Import map**: Three.js được load từ CDN (`unpkg.com`) thông qua `<script type="importmap">` trong `index.html`, không cần bundler.
+- **Import map**: Three.js được load từ CDN (`unpkg.com`) qua `<script type="importmap">` trong `index.html`, không cần bundler.
